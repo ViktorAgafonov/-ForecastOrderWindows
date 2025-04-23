@@ -18,18 +18,21 @@ namespace Forecast.Forms
     {
         private readonly List<ForecastResult> _forecasts;
         private readonly IRecommendationSystem _recommendationSystem;
+        private readonly ForecastSettings _forecastSettings;
         
         /// <summary>
         /// Конструктор формы таблицы заказов
         /// </summary>
         /// <param name="forecasts">Список прогнозов</param>
         /// <param name="recommendationSystem">Система рекомендаций</param>
-        public OrderTableForm(List<ForecastResult> forecasts, IRecommendationSystem recommendationSystem)
+        /// <param name="forecastSettings">Настройки прогнозирования</param>
+        public OrderTableForm(List<ForecastResult> forecasts, IRecommendationSystem recommendationSystem, ForecastSettings forecastSettings)
         {
             InitializeComponent();
             
             _forecasts = forecasts;
             _recommendationSystem = recommendationSystem;
+            _forecastSettings = forecastSettings;
             
             // Настройка формы
             this.Text = "Таблица заказов";
@@ -51,7 +54,6 @@ namespace Forecast.Forms
             // Создание панели инструментов
             var toolStrip = new ToolStrip();
             toolStrip.Dock = DockStyle.Top;
-            this.Controls.Add(toolStrip);
             
             var printButton = new ToolStripButton("Печать");
             printButton.Click += PrintButton_Click;
@@ -101,6 +103,18 @@ namespace Forecast.Forms
             priorityComboBox.SelectedIndexChanged += PriorityComboBox_SelectedIndexChanged;
             toolStrip.Items.Add(priorityComboBox);
             
+            // Создание строки состояния
+            var statusStrip = new StatusStrip();
+            statusStrip.Dock = DockStyle.Bottom;
+            
+            var totalItemsLabel = new ToolStripStatusLabel();
+            totalItemsLabel.Name = "totalItemsLabel";
+            statusStrip.Items.Add(totalItemsLabel);
+            
+            // Создание панели для таблицы
+            var contentPanel = new Panel();
+            contentPanel.Dock = DockStyle.Fill;
+            
             // Создание таблицы заказов
             var ordersGridView = new DataGridView();
             ordersGridView.Dock = DockStyle.Fill;
@@ -113,16 +127,47 @@ namespace Forecast.Forms
             ordersGridView.AllowUserToResizeRows = false;
             ordersGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.AliceBlue;
             ordersGridView.CellDoubleClick += OrdersGridView_CellDoubleClick;
-            this.Controls.Add(ordersGridView);
             
-            // Создание строки состояния
-            var statusStrip = new StatusStrip();
-            statusStrip.Dock = DockStyle.Bottom;
+            // Настройка цветов для приоритетов
+            ordersGridView.CellFormatting += (sender, e) =>
+            {
+                if (e.ColumnIndex == 0 && e.RowIndex >= 0) // Столбец "Приоритет"
+                {
+                    if (e.Value != null)
+                    {
+                        int priority;
+                        if (int.TryParse(e.Value.ToString(), out priority))
+                        {
+                            switch (priority)
+                            {
+                                case 1: // Наивысший приоритет
+                                    e.CellStyle.BackColor = Color.Red;
+                                    e.CellStyle.ForeColor = Color.White;
+                                    break;
+                                case 2: // Высокий приоритет
+                                    e.CellStyle.BackColor = Color.Orange;
+                                    break;
+                                case 3: // Средний приоритет
+                                    e.CellStyle.BackColor = Color.Yellow;
+                                    break;
+                                case 4: // Низкий приоритет
+                                    e.CellStyle.BackColor = Color.LightGreen;
+                                    break;
+                                case 5: // Самый низкий приоритет
+                                    e.CellStyle.BackColor = Color.LightBlue;
+                                    break;
+                            }
+                        }
+                    }
+                }
+            };
+            
+            contentPanel.Controls.Add(ordersGridView);
+            
+            // Добавление компонентов на форму в правильном порядке
+            this.Controls.Add(contentPanel);
             this.Controls.Add(statusStrip);
-            
-            var totalItemsLabel = new ToolStripStatusLabel();
-            totalItemsLabel.Name = "totalItemsLabel";
-            statusStrip.Items.Add(totalItemsLabel);
+            this.Controls.Add(toolStrip);
         }
         
         /// <summary>
@@ -154,102 +199,125 @@ namespace Forecast.Forms
         {
             try
             {
-                var ordersGridView = this.Controls.Find("ordersGridView", true).FirstOrDefault() as DataGridView;
-                var statusStrip = this.Controls.OfType<StatusStrip>().FirstOrDefault();
-                var totalItemsLabel = statusStrip?.Items.OfType<ToolStripStatusLabel>().FirstOrDefault(x => x.Name == "totalItemsLabel");
+                // Получаем ссылки на элементы управления
+                DataGridView? ordersGridView = null;
+                ToolStripStatusLabel? totalItemsLabel = null;
                 
-                if (ordersGridView != null && totalItemsLabel != null)
+                // Ищем DataGridView
+                foreach (Control control in this.Controls)
                 {
-                    // Проверка на наличие данных
-                    if (forecasts == null || forecasts.Count == 0)
+                    if (control is Panel panel)
                     {
-                        ordersGridView.DataSource = null;
-                        totalItemsLabel.Text = "Нет данных для отображения";
-                        return;
-                    }
-                    
-                    // Очистка таблицы
-                    ordersGridView.DataSource = null;
-                    
-                    // Создание источника данных для таблицы
-                    var dataSource = forecasts.Select(order => new
-                    {
-                        Приоритет = order.Priority,
-                        Артикул = order.UnifiedArticle,
-                        Наименование = order.ProductName,
-                        Дата_заказа = order.NextOrderDate.ToShortDateString(),
-                        Количество = Math.Round(order.RecommendedQuantity, 0),
-                        Дата_размещения = order.OptimalOrderPlacementDate.ToShortDateString(),
-                        Уверенность = $"{order.Confidence:F1}%",
-                        Примечание = order.Notes
-                    }).ToList();
-                    
-                    // Установка источника данных
-                    ordersGridView.DataSource = dataSource;
-                    
-                    // Настройка заголовков столбцов
-                    if (ordersGridView.Columns.Count >= 8) // Проверка, что все столбцы существуют
-                    {
-                        // Установка заголовков столбцов
-                        ordersGridView.Columns[0].HeaderText = "Приоритет";
-                        ordersGridView.Columns[1].HeaderText = "Артикул";
-                        ordersGridView.Columns[2].HeaderText = "Наименование товара";
-                        ordersGridView.Columns[3].HeaderText = "Дата заказа";
-                        ordersGridView.Columns[4].HeaderText = "Количество";
-                        ordersGridView.Columns[5].HeaderText = "Дата размещения";
-                        ordersGridView.Columns[6].HeaderText = "Уверенность, %";
-                        ordersGridView.Columns[7].HeaderText = "Примечание";
-                        
-                        // Настройка ширины столбцов
-                        ordersGridView.Columns[0].Width = 80; // Приоритет
-                        ordersGridView.Columns[1].Width = 100; // Артикул
-                        ordersGridView.Columns[2].Width = 200; // Наименование
-                        ordersGridView.Columns[3].Width = 100; // Дата заказа
-                        ordersGridView.Columns[4].Width = 80; // Количество
-                        ordersGridView.Columns[5].Width = 120; // Дата размещения
-                        ordersGridView.Columns[6].Width = 100; // Уверенность
-                        ordersGridView.Columns[7].Width = 300; // Примечание
-                        
-                        // Выравнивание в столбцах
-                        ordersGridView.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Приоритет
-                        ordersGridView.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Дата заказа
-                        ordersGridView.Columns[4].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight; // Количество
-                        ordersGridView.Columns[5].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Дата размещения
-                        ordersGridView.Columns[6].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Уверенность
-                    }
-                    
-                    // Настройка цветов для приоритетов
-                    ordersGridView.CellFormatting += (sender, e) =>
-                    {
-                        if (e.ColumnIndex == 0 && e.RowIndex >= 0) // Столбец "Приоритет"
+                        foreach (Control panelControl in panel.Controls)
                         {
-                            int priority = Convert.ToInt32(e.Value);
-                            
-                            switch (priority)
+                            if (panelControl is DataGridView dataGridView && dataGridView.Name == "ordersGridView")
                             {
-                                case 1: // Наивысший приоритет
-                                    e.CellStyle.BackColor = Color.Red;
-                                    e.CellStyle.ForeColor = Color.White;
-                                    break;
-                                case 2: // Высокий приоритет
-                                    e.CellStyle.BackColor = Color.Orange;
-                                    break;
-                                case 3: // Средний приоритет
-                                    e.CellStyle.BackColor = Color.Yellow;
-                                    break;
-                                case 4: // Низкий приоритет
-                                    e.CellStyle.BackColor = Color.LightGreen;
-                                    break;
-                                case 5: // Самый низкий приоритет
-                                    e.CellStyle.BackColor = Color.LightBlue;
-                                    break;
+                                ordersGridView = dataGridView;
+                                break;
                             }
                         }
-                    };
-                    
-                    // Обновление статусной строки
-                    totalItemsLabel.Text = $"Всего заказов: {forecasts.Count}";
+                    }
                 }
+                
+                // Ищем StatusStrip и ToolStripStatusLabel
+                foreach (Control control in this.Controls)
+                {
+                    if (control is StatusStrip statusStrip)
+                    {
+                        foreach (ToolStripItem item in statusStrip.Items)
+                        {
+                            if (item is ToolStripStatusLabel label && label.Name == "totalItemsLabel")
+                            {
+                                totalItemsLabel = label;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // Проверка на null-ссылки
+                if (ordersGridView == null || totalItemsLabel == null)
+                {
+                    MessageBox.Show("Не удалось найти элементы управления для отображения заказов. Возможно, они не были инициализированы.", "Ошибка", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+                
+                // Проверка на наличие данных
+                if (forecasts == null || forecasts.Count == 0)
+                {
+                    ordersGridView.DataSource = null;
+                    totalItemsLabel.Text = "Нет данных для отображения";
+                    return;
+                }
+                
+                // Фильтрация прогнозов по порогу уверенности
+                var filteredForecasts = forecasts;
+                if (_forecastSettings != null && _forecastSettings.MinConfidenceThreshold > 0)
+                {
+                    filteredForecasts = forecasts.Where(f => f.Confidence >= _forecastSettings.MinConfidenceThreshold).ToList();
+                    
+                    // Если после фильтрации нет данных
+                    if (filteredForecasts.Count == 0)
+                    {
+                        ordersGridView.DataSource = null;
+                        totalItemsLabel.Text = $"Нет данных, соответствующих порогу уверенности {_forecastSettings.MinConfidenceThreshold}%";
+                        return;
+                    }
+                }
+                
+                // Очистка таблицы
+                ordersGridView.DataSource = null;
+                
+                // Создание источника данных для таблицы
+                var dataSource = filteredForecasts.Select(order => new
+                {
+                    Приоритет = order.Priority,
+                    Артикул = order.UnifiedArticle,
+                    Наименование = order.ProductName,
+                    Дата_заказа = order.NextOrderDate.ToShortDateString(),
+                    Количество = Math.Round(order.RecommendedQuantity, 0),
+                    Дата_размещения = order.OptimalOrderPlacementDate.ToShortDateString(),
+                    Уверенность = $"{order.Confidence:F1}%",
+                    Примечание = order.Notes
+                }).ToList();
+                
+                // Установка источника данных
+                ordersGridView.DataSource = dataSource;
+                
+                // Настройка заголовков столбцов
+                if (ordersGridView.Columns.Count >= 8) // Проверка, что все столбцы существуют
+                {
+                    // Установка заголовков столбцов
+                    ordersGridView.Columns[0].HeaderText = "Приоритет";
+                    ordersGridView.Columns[1].HeaderText = "Артикул";
+                    ordersGridView.Columns[2].HeaderText = "Наименование товара";
+                    ordersGridView.Columns[3].HeaderText = "Дата заказа";
+                    ordersGridView.Columns[4].HeaderText = "Количество";
+                    ordersGridView.Columns[5].HeaderText = "Дата размещения";
+                    ordersGridView.Columns[6].HeaderText = "Уверенность, %";
+                    ordersGridView.Columns[7].HeaderText = "Примечание";
+                    
+                    // Настройка ширины столбцов
+                    ordersGridView.Columns[0].Width = 80; // Приоритет
+                    ordersGridView.Columns[1].Width = 100; // Артикул
+                    ordersGridView.Columns[2].Width = 200; // Наименование
+                    ordersGridView.Columns[3].Width = 100; // Дата заказа
+                    ordersGridView.Columns[4].Width = 80; // Количество
+                    ordersGridView.Columns[5].Width = 120; // Дата размещения
+                    ordersGridView.Columns[6].Width = 100; // Уверенность
+                    ordersGridView.Columns[7].Width = 300; // Примечание
+                    
+                    // Выравнивание в столбцах
+                    ordersGridView.Columns[0].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Приоритет
+                    ordersGridView.Columns[3].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Дата заказа
+                    ordersGridView.Columns[4].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight; // Количество
+                    ordersGridView.Columns[5].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Дата размещения
+                    ordersGridView.Columns[6].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; // Уверенность
+                }
+                
+                // Обновление статусной строки
+                totalItemsLabel.Text = $"Всего заказов: {forecasts.Count}";
             }
             catch (Exception ex)
             {
@@ -460,6 +528,13 @@ namespace Forecast.Forms
             // Установка лицензии EPPlus
             ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
             
+            // Фильтрация прогнозов по порогу уверенности
+            var filteredForecasts = _forecasts;
+            if (_forecastSettings != null && _forecastSettings.MinConfidenceThreshold > 0)
+            {
+                filteredForecasts = _forecasts.Where(f => f.Confidence >= _forecastSettings.MinConfidenceThreshold).ToList();
+            }
+            
             using (var package = new ExcelPackage())
             {
                 // Создание листа с таблицей заказов
@@ -490,7 +565,7 @@ namespace Forecast.Forms
                 
                 // Заполнение данными
                 int row = 2;
-                foreach (var forecast in _forecasts.OrderBy(f => f.NextOrderDate))
+                foreach (var forecast in filteredForecasts.OrderBy(f => f.NextOrderDate))
                 {
                     worksheet.Cells[row, 1].Value = forecast.Priority;
                     worksheet.Cells[row, 2].Value = forecast.UnifiedArticle;
@@ -536,12 +611,12 @@ namespace Forecast.Forms
                     }
                     
                     // Форматирование остальных ячеек в строке
-                    using (var range = worksheet.Cells[row, 2, row, 8])
+                    using (var rowRange = worksheet.Cells[row, 2, row, 8])
                     {
-                        range.Style.Border.Top.Style = ExcelBorderStyle.Thin;
-                        range.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
-                        range.Style.Border.Left.Style = ExcelBorderStyle.Thin;
-                        range.Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                        rowRange.Style.Border.Top.Style = ExcelBorderStyle.Thin;
+                        rowRange.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
+                        rowRange.Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                        rowRange.Style.Border.Right.Style = ExcelBorderStyle.Thin;
                     }
                     
                     // Форматирование дат
@@ -560,7 +635,7 @@ namespace Forecast.Forms
                 // Сохранение файла
                 package.SaveAs(new FileInfo(filePath));
             }
-        }    
+        }
         
         #endregion
     }

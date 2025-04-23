@@ -404,7 +404,7 @@ namespace Forecast.Forms
             try
             {
                 // Создание и отображение формы таблицы заказов
-                var tableForm = new OrderTableForm(_forecasts, _recommendationSystem);
+                var tableForm = new OrderTableForm(_forecasts, _recommendationSystem, _forecastSettings);
                 tableForm.ShowDialog();
             }
             catch (Exception ex)
@@ -560,6 +560,9 @@ namespace Forecast.Forms
                     AddSettingGroup(settingsTable, 8, "Коэффициент сезонности по умолчанию", _forecastSettings.DefaultSeasonalityCoefficient.ToString("F2"), 
                         ForecastSettings.GetParameterDescription(nameof(ForecastSettings.DefaultSeasonalityCoefficient)), valueControls, nameof(ForecastSettings.DefaultSeasonalityCoefficient));
                     
+                    AddSettingGroup(settingsTable, 9, "Минимальный порог уверенности (%)", _forecastSettings.MinConfidenceThreshold.ToString("F1"), 
+                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.MinConfidenceThreshold)), valueControls, nameof(ForecastSettings.MinConfidenceThreshold));
+                    
                     settingsPanel.Controls.Add(settingsTable);
                     
                     // Добавляем панель кнопок
@@ -588,6 +591,7 @@ namespace Forecast.Forms
                             _forecastSettings.MediumPriorityThreshold = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.MediumPriorityThreshold)]).Text);
                             _forecastSettings.LowPriorityThreshold = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.LowPriorityThreshold)]).Text);
                             _forecastSettings.DefaultSeasonalityCoefficient = double.Parse(((TextBox)valueControls[nameof(ForecastSettings.DefaultSeasonalityCoefficient)]).Text);
+                            _forecastSettings.MinConfidenceThreshold = double.Parse(((TextBox)valueControls[nameof(ForecastSettings.MinConfidenceThreshold)]).Text);
                             
                             // Сохраняем настройки в файл
                             _forecastSettings.SaveToFile(_settingsFilePath);

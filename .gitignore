@@ -2,11 +2,8 @@
 *.xlsx
 *.xls
 
-# Игнорирование папки с данными
-/Utils/
-
 # Игнорирование файла соответствий
-/data/item_mapping.json
+/Utils/item_mapping.json
 
 # Игнорирование obj
 /obj/
