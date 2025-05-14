@@ -68,17 +68,50 @@ namespace Forecast.Models
         {
             try
             {
+                if (string.IsNullOrEmpty(filePath))
+                {
+                    throw new ArgumentException("Путь к файлу не может быть пустым", nameof(filePath));
+                }
+
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
-                    return JsonSerializer.Deserialize<ForecastSettings>(json) ?? new ForecastSettings();
+                    
+                    // Проверяем, что JSON не пустой
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        throw new InvalidOperationException("Файл настроек пуст");
+                    }
+
+                    var settings = JsonSerializer.Deserialize<ForecastSettings>(json);
+                    
+                    if (settings == null)
+                    {
+                        throw new InvalidOperationException("Не удалось десериализовать настройки из JSON");
+                    }
+
+                    // Валидация значений настроек
+                    if (settings.DaysAhead < 1 || settings.DaysAhead > 365)
+                    {
+                        throw new InvalidOperationException($"Недопустимое значение для DaysAhead: {settings.DaysAhead}");
+                    }
+
+                    if (settings.MinConfidenceThreshold < 0 || settings.MinConfidenceThreshold > 100)
+                    {
+                        throw new InvalidOperationException($"Недопустимое значение для MinConfidenceThreshold: {settings.MinConfidenceThreshold}");
+                    }
+
+                    return settings;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // В случае ошибки возвращаем настройки по умолчанию
+                // Логируем ошибку с подробностями
+                Console.WriteLine($"Ошибка при загрузке настроек из файла {filePath}: {ex.Message}");
+                Console.WriteLine(ex.StackTrace);
             }
             
+            // Если что-то пошло не так, возвращаем настройки по умолчанию
             return new ForecastSettings();
         }
         

@@ -15,22 +15,22 @@ namespace Forecast.Models
         /// <summary>
         /// Номер заявки
         /// </summary>
-        public string OrderNumber { get; set; }
+        public string? OrderNumber { get; set; }
         
         /// <summary>
         /// Номер позиции в заявке
         /// </summary>
-        public string PositionNumber { get; set; }
+        public string? PositionNumber { get; set; }
         
         /// <summary>
         /// Наименование товара
         /// </summary>
-        public string ProductName { get; set; }
+        public string? ProductName { get; set; }
         
         /// <summary>
         /// Артикул товара
         /// </summary>
-        public string ArticleNumber { get; set; }
+        public string? ArticleNumber { get; set; }
         
         /// <summary>
         /// Заказанное количество товара

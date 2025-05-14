@@ -18,7 +18,7 @@ namespace Forecast.Forms
         private readonly IDataProcessor _dataProcessor;
         private readonly IOrderAnalyzer _orderAnalyzer;
         private readonly IForecastEngine _forecastEngine;
-        private readonly IRecommendationSystem _recommendationSystem;
+        private IRecommendationSystem _recommendationSystem; // Убрали readonly для возможности переинициализации
         
         // Данные
         private List<OrderItem> _orderItems;
@@ -47,7 +47,7 @@ namespace Forecast.Forms
             _forecastEngine = new ForecastEngine();
             _recommendationSystem = new RecommendationSystem();
             
-            // Инициализация данных
+            // Инициализация данных - пустые коллекции по умолчанию
             _orderItems = new List<OrderItem>();
             _unifiedProducts = new List<UnifiedProduct>();
             _forecasts = new List<ForecastResult>();
@@ -64,11 +64,14 @@ namespace Forecast.Forms
             this.Text = "Прогнозирование заявок";
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Size = new Size(1000, 700);
-            
+
+            // Добавляем обработчик события закрытия формы
+            this.FormClosing += MainForm_FormClosing;
+
             // Инициализация компонентов формы
             InitializeCustomComponents();
             
-            // Загрузка сохраненных данных при запуске
+            // Загрузка только настроек и соответствий товаров при запуске
             LoadSavedData();
         }
         
@@ -94,7 +97,7 @@ namespace Forecast.Forms
             fileMenuItem.DropDownItems.Add(new ToolStripSeparator());
             
             var exitMenuItem = new ToolStripMenuItem("Выход");
-            exitMenuItem.Click += (s, e) => this.Close();
+            exitMenuItem.Click += ExitMenuItem_Click;
             exitMenuItem.ShortcutKeys = Keys.Alt | Keys.F4;
             fileMenuItem.DropDownItems.Add(exitMenuItem);
             
@@ -201,7 +204,7 @@ namespace Forecast.Forms
         }
         
         /// <summary>
-        /// Загрузка сохраненных данных при запуске
+        /// Загрузка сохраненных настроек и соответствий товаров (без прогнозов)
         /// </summary>
         private void LoadSavedData()
         {
@@ -226,12 +229,9 @@ namespace Forecast.Forms
                     UpdateProductsGrid();
                 }
                 
-                // Загрузка сохраненных прогнозов
-                if (File.Exists(_forecastsFilePath))
-                {
-                    _forecasts = _recommendationSystem.LoadRecommendations(_forecastsFilePath);
-                    UpdateForecastsGrid();
-                }
+                // При запуске не загружаем прогнозы автоматически
+                // Пользователь должен сначала открыть файл с данными
+                _forecasts = new List<ForecastResult>();
             }
             catch (Exception ex)
             {
@@ -356,6 +356,12 @@ namespace Forecast.Forms
                 return;
             }
             
+            // Проверяем и инициализируем recommendationSystem если он не инициализирован
+            if (_recommendationSystem == null)
+            {
+                _recommendationSystem = new RecommendationSystem();
+            }
+            
             try
             {
                 Cursor = Cursors.WaitCursor;
@@ -403,15 +409,95 @@ namespace Forecast.Forms
             
             try
             {
-                // Создание и отображение формы таблицы заказов
+                // Проверяем, что все необходимые объекты инициализированы
+                if (_forecastSettings == null)
+                {
+                    _forecastSettings = new ForecastSettings();
+                }
+
+                // Логируем состояние перед созданием формы
+
+
+                // Создание формы
                 var tableForm = new OrderTableForm(_forecasts, _recommendationSystem, _forecastSettings);
-                tableForm.ShowDialog();
+
+
+                // Отображение формы
+                try
+                {
+                    tableForm.ShowDialog();
+
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при отображении формы: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    throw;
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Ошибка при открытии таблицы заказов: {ex.Message}", "Ошибка", 
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+        
+        /// <summary>
+        /// Сохранение настроек прогноза
+        /// </summary>
+        private void SaveSettings()
+        {
+            try
+            {
+                if (_forecastSettings != null && !string.IsNullOrEmpty(_settingsFilePath))
+                {
+                    string json = System.Text.Json.JsonSerializer.Serialize(_forecastSettings);
+                    File.WriteAllText(_settingsFilePath, json);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при сохранении настроек: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        
+        /// <summary>
+        /// Обработчик события закрытия формы
+        /// </summary>
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            try
+            {
+                // Сохраняем настройки перед закрытием
+                if (_forecastSettings != null)
+                {
+                    SaveSettings();
+                }
+                
+                // Сбрасываем данные анализа
+                _forecasts = new List<ForecastResult>();
+                
+                // Если нужно, можно также сбросить другие данные
+                _orderItems = new List<OrderItem>();
+                _unifiedProducts = new List<UnifiedProduct>();
+                
+                // Освобождаем ресурсы
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+            catch (Exception ex)
+            {
+                // Логируем ошибку, но не показываем пользователю при закрытии
+                MessageBox.Show($"Ошибка при закрытии приложения: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        
+        /// <summary>
+        /// Обработчик нажатия на пункт меню "Выход"
+        /// </summary>
+        private void ExitMenuItem_Click(object sender, EventArgs e)
+        {
+            // Закрываем форму, что вызовет событие FormClosing
+            this.Close();
         }
         
         /// <summary>

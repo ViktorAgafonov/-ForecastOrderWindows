@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using ExcelDataReader;
 using Forecast.Models;
-using OfficeOpenXml;
 
 namespace Forecast.Services
 {
@@ -24,56 +26,67 @@ namespace Forecast.Services
         /// <returns>Список элементов заявок</returns>
         public List<OrderItem> LoadData(string filePath)
         {
-            // Установка лицензии EPPlus
-            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
-            
             var orderItems = new List<OrderItem>();
             
             try
             {
-                using (var package = new ExcelPackage(new FileInfo(filePath)))
+                // Регистрируем кодировку для корректной работы с кириллицей
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                
+                using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read))
                 {
-                    // Предполагаем, что данные находятся на первом листе
-                    var worksheet = package.Workbook.Worksheets[0];
-                    
-                    // Определяем количество строк с данными
-                    int rowCount = worksheet.Dimension.Rows;
-                    
-                    // Пропускаем заголовок (первую строку)
-                    for (int row = 2; row <= rowCount; row++)
+                    // Автоматически определяем формат файла (xls или xlsx)
+                    using (var reader = ExcelReaderFactory.CreateReader(stream))
                     {
-                        // Проверяем, что строка не пустая
-                        if (string.IsNullOrWhiteSpace(worksheet.Cells[row, 1].Text))
-                            continue;
-                        
-                        var orderItem = new OrderItem
+                        // Преобразуем Excel в DataSet
+                        var result = reader.AsDataSet(new ExcelDataSetConfiguration()
                         {
-                            // Преобразуем значения ячеек в соответствующие типы данных
-                            OrderDate = ParseDate(worksheet.Cells[row, 1].Text),
-                            OrderNumber = worksheet.Cells[row, 2].Text,
-                            PositionNumber = worksheet.Cells[row, 3].Text,
-                            ProductName = worksheet.Cells[row, 4].Text,
-                            ArticleNumber = worksheet.Cells[row, 5].Text,
-                            OrderedQuantity = ParseDouble(worksheet.Cells[row, 6].Text),
-                            DeliveredQuantity = ParseDeliveredQuantity(worksheet.Cells[row, 7].Text),
-                            DeliveryDate = ParseNullableDate(worksheet.Cells[row, 8].Text),
-                            Notes = worksheet.Cells[row, 9].Text
-                        };
+                            ConfigureDataTable = (_) => new ExcelDataTableConfiguration()
+                            {
+                                UseHeaderRow = true // Используем первую строку как заголовки
+                            }
+                        });
                         
-                        // Если артикул не указан, пытаемся извлечь его из наименования
-                        if (string.IsNullOrWhiteSpace(orderItem.ArticleNumber) && !string.IsNullOrWhiteSpace(orderItem.ProductName))
+                        // Предполагаем, что данные находятся на первом листе
+                        DataTable dataTable = result.Tables[0];
+                        
+                        // Обрабатываем каждую строку данных
+                        foreach (DataRow row in dataTable.Rows)
                         {
-                            orderItem.ArticleNumber = ExtractArticleFromName(orderItem.ProductName);
+                            // Проверяем, что строка не пустая
+                            if (row[0] == DBNull.Value || string.IsNullOrWhiteSpace(row[0].ToString()))
+                                continue;
+                            
+                            var orderItem = new OrderItem
+                            {
+                                // Преобразуем значения ячеек в соответствующие типы данных
+                                OrderDate = ParseDate(GetCellValue(row, 0)),
+                                OrderNumber = GetCellValue(row, 1),
+                                PositionNumber = GetCellValue(row, 2),
+                                ProductName = GetCellValue(row, 3),
+                                ArticleNumber = GetCellValue(row, 4),
+                                OrderedQuantity = ParseDouble(GetCellValue(row, 5)),
+                                DeliveredQuantity = ParseDeliveredQuantity(GetCellValue(row, 6)),
+                                DeliveryDate = ParseNullableDate(GetCellValue(row, 7)),
+                                Notes = GetCellValue(row, 8)
+                            };
+                            
+                            // Если артикул не указан, пытаемся извлечь его из наименования
+                            if (string.IsNullOrWhiteSpace(orderItem.ArticleNumber) && !string.IsNullOrWhiteSpace(orderItem.ProductName))
+                            {
+                                orderItem.ArticleNumber = ExtractArticleFromName(orderItem.ProductName);
+                            }
+                            
+                            orderItems.Add(orderItem);
                         }
-                        
-                        orderItems.Add(orderItem);
                     }
                 }
             }
             catch (Exception ex)
             {
                 // В реальном приложении здесь должна быть обработка ошибок
-                Console.WriteLine($"Ошибка при загрузке данных: {ex.Message}");
+                // Логирование ошибки вместо вывода в консоль
+                throw new Exception($"Ошибка при загрузке данных: {ex.Message}", ex);
             }
             
             return orderItems;
@@ -130,15 +143,15 @@ namespace Forecast.Services
                 foreach (var unifiedProduct in unifiedProducts)
                 {
                     if (unifiedProduct.NameVariations.Any(name => 
-                        CalculateSimilarity(name, item.ProductName) > SIMILARITY_THRESHOLD))
+                CalculateSimilarity(name ?? string.Empty, item.ProductName ?? string.Empty) > SIMILARITY_THRESHOLD))
                     {
                         // Добавляем товар к существующему унифицированному товару
                         unifiedProduct.OrderHistory.Add(item);
                         
                         // Добавляем наименование, если его еще нет в списке вариаций
-                        if (!unifiedProduct.NameVariations.Contains(item.ProductName))
+                        if (!string.IsNullOrEmpty(item.ProductName) && !unifiedProduct.NameVariations.Contains(item.ProductName ?? string.Empty))
                         {
-                            unifiedProduct.NameVariations.Add(item.ProductName);
+                            unifiedProduct.NameVariations.Add(item.ProductName ?? string.Empty);
                         }
                         
                         added = true;
@@ -156,7 +169,11 @@ namespace Forecast.Services
                         OrderHistory = new List<OrderItem> { item }
                     };
                     
-                    newUnifiedProduct.NameVariations.Add(item.ProductName);
+                    if (!string.IsNullOrEmpty(item.ProductName))
+                    {
+                        newUnifiedProduct.NameVariations.Add(item.ProductName);
+                    }
+                    
                     unifiedProducts.Add(newUnifiedProduct);
                 }
             }
@@ -195,7 +212,8 @@ namespace Forecast.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Ошибка при сохранении базы соответствий: {ex.Message}");
+                // Логирование ошибки вместо вывода в консоль
+                throw new Exception($"Ошибка при сохранении базы соответствий: {ex.Message}", ex);
             }
         }
         
@@ -219,20 +237,32 @@ namespace Forecast.Services
                     {
                         unifiedProducts.Add(new UnifiedProduct
                         {
-                            UnifiedArticle = mapping.UnifiedArticle,
-                            PrimaryName = mapping.PrimaryName,
-                            NameVariations = mapping.NameVariations,
-                            ArticleVariations = mapping.ArticleVariations
+                            UnifiedArticle = mapping.UnifiedArticle ?? string.Empty,
+                            PrimaryName = mapping.PrimaryName ?? string.Empty,
+                            NameVariations = mapping.NameVariations ?? new List<string>(),
+                            ArticleVariations = mapping.ArticleVariations ?? new List<string>()
                         });
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Ошибка при загрузке базы соответствий: {ex.Message}");
+                // Логирование ошибки вместо вывода в консоль
+                throw new Exception($"Ошибка при загрузке базы соответствий: {ex.Message}", ex);
             }
             
             return unifiedProducts;
+        }
+        
+        /// <summary>
+        /// Получение значения ячейки из DataRow
+        /// </summary>
+        private string GetCellValue(DataRow row, int columnIndex)
+        {
+            if (columnIndex >= row.ItemArray.Length || row[columnIndex] == DBNull.Value)
+                return string.Empty;
+                
+            return row[columnIndex].ToString() ?? string.Empty;
         }
         
         #region Вспомогательные методы
@@ -327,13 +357,18 @@ namespace Forecast.Services
         /// </summary>
         private string GetMostFrequentName(IEnumerable<OrderItem> items)
         {
-            return items
+            if (items == null || !items.Any())
+                return string.Empty;
+
+            var mostFrequent = items
+                .Where(item => !string.IsNullOrEmpty(item.ProductName))
                 .GroupBy(item => item.ProductName)
                 .OrderByDescending(group => group.Count())
-                .First()
-                .Key;
+                .FirstOrDefault();
+
+            return mostFrequent?.Key ?? string.Empty;
         }
-        
+
         /// <summary>
         /// Расчет степени схожести двух строк (упрощенная реализация расстояния Левенштейна)
         /// </summary>
@@ -350,7 +385,7 @@ namespace Forecast.Services
             
             return 1.0 - (double)distance / maxLength;
         }
-        
+
         /// <summary>
         /// Расчет расстояния Левенштейна между двумя строками
         /// </summary>
@@ -546,9 +581,15 @@ namespace Forecast.Services
     /// </summary>
     internal class MappingItem
     {
-        public string UnifiedArticle { get; set; }
-        public string PrimaryName { get; set; }
-        public List<string> NameVariations { get; set; }
-        public List<string> ArticleVariations { get; set; }
+        public string? UnifiedArticle { get; set; }
+        public string? PrimaryName { get; set; }
+        public List<string>? NameVariations { get; set; }
+        public List<string>? ArticleVariations { get; set; }
+
+        public MappingItem()
+        {
+            NameVariations = new List<string>();
+            ArticleVariations = new List<string>();
+        }
     }
 }

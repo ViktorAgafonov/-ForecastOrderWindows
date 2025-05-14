@@ -11,12 +11,12 @@ namespace Forecast.Models
         /// <summary>
         /// Унифицированный артикул товара
         /// </summary>
-        public string UnifiedArticle { get; set; }
+        public string? UnifiedArticle { get; set; }
         
         /// <summary>
         /// Основное наименование товара
         /// </summary>
-        public string PrimaryName { get; set; }
+        public string? PrimaryName { get; set; }
         
         /// <summary>
         /// Список всех вариаций наименований товара

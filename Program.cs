@@ -19,7 +19,7 @@ namespace Forecast
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             ApplicationConfiguration.Initialize();
-            
+
             // Запуск главной формы приложения
             Application.Run(new MainForm());
         }
