@@ -188,7 +188,7 @@ namespace Forecast.Services
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
-                    forecasts = JsonSerializer.Deserialize<List<ForecastResult>>(json);
+                    forecasts = JsonSerializer.Deserialize<List<ForecastResult>>(json) ?? new List<ForecastResult>();
                 }
             }
             catch (Exception ex)

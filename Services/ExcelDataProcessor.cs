@@ -48,6 +48,10 @@ namespace Forecast.Services
                         });
                         
                         // Предполагаем, что данные находятся на первом листе
+                        if (result.Tables.Count == 0)
+                        {
+                            return orderItems;
+                        }
                         DataTable dataTable = result.Tables[0];
                         
                         // Обрабатываем каждую строку данных
@@ -104,7 +108,7 @@ namespace Forecast.Services
             // Группируем заказы по артикулам
             var groupsByArticle = orderItems
                 .Where(item => !string.IsNullOrWhiteSpace(item.ArticleNumber))
-                .GroupBy(item => item.ArticleNumber.Trim().ToUpper());
+                .GroupBy(item => (item.ArticleNumber ?? string.Empty).Trim().ToUpper());
             
             // Создаем унифицированные товары для каждой группы
             foreach (var group in groupsByArticle)
@@ -120,7 +124,8 @@ namespace Forecast.Services
                 
                 // Добавляем все вариации наименований
                 unifiedProduct.NameVariations = group
-                    .Select(item => item.ProductName)
+                    .Select(item => item.ProductName ?? string.Empty)
+                    .Where(name => !string.IsNullOrEmpty(name))
                     .Distinct()
                     .ToList();
                 
@@ -149,9 +154,9 @@ namespace Forecast.Services
                         unifiedProduct.OrderHistory.Add(item);
                         
                         // Добавляем наименование, если его еще нет в списке вариаций
-                        if (!string.IsNullOrEmpty(item.ProductName) && !unifiedProduct.NameVariations.Contains(item.ProductName ?? string.Empty))
+                        if (!string.IsNullOrEmpty(item.ProductName) && !unifiedProduct.NameVariations.Contains(item.ProductName))
                         {
-                            unifiedProduct.NameVariations.Add(item.ProductName ?? string.Empty);
+                            unifiedProduct.NameVariations.Add(item.ProductName);
                         }
                         
                         added = true;
@@ -231,17 +236,52 @@ namespace Forecast.Services
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
-                    var mappings = JsonSerializer.Deserialize<List<MappingItem>>(json) ?? new List<MappingItem>();
                     
-                    foreach (var mapping in mappings)
+                    // Пробуем сначала загрузить в новом формате (MappingDatabase)
+                    try
                     {
-                        unifiedProducts.Add(new UnifiedProduct
+                        var mappingDatabase = JsonSerializer.Deserialize<MappingDatabase>(json);
+                        if (mappingDatabase != null && mappingDatabase.Groups != null)
                         {
-                            UnifiedArticle = mapping.UnifiedArticle ?? string.Empty,
-                            PrimaryName = mapping.PrimaryName ?? string.Empty,
-                            NameVariations = mapping.NameVariations ?? new List<string>(),
-                            ArticleVariations = mapping.ArticleVariations ?? new List<string>()
-                        });
+                            foreach (var group in mappingDatabase.Groups)
+                            {
+                                unifiedProducts.Add(new UnifiedProduct
+                                {
+                                    UnifiedArticle = group.UnifiedArticle ?? string.Empty,
+                                    PrimaryName = group.PrimaryName ?? string.Empty,
+                                    NameVariations = group.NameVariations ?? new List<string>(),
+                                    ArticleVariations = group.ArticleVariations ?? new List<string>()
+                                });
+                            }
+                            return unifiedProducts;
+                        }
+                    }
+                    catch
+                    {
+                        // Если не удалось в новом формате, пробуем старый
+                    }
+                    
+                    // Пробуем загрузить в старом формате (List<MappingItem>)
+                    try
+                    {
+                        var mappings = JsonSerializer.Deserialize<List<MappingItem>>(json) ?? new List<MappingItem>();
+                        
+                        foreach (var mapping in mappings)
+                        {
+                            unifiedProducts.Add(new UnifiedProduct
+                            {
+                                UnifiedArticle = mapping.UnifiedArticle ?? string.Empty,
+                                PrimaryName = mapping.PrimaryName ?? string.Empty,
+                                NameVariations = mapping.NameVariations ?? new List<string>(),
+                                ArticleVariations = mapping.ArticleVariations ?? new List<string>()
+                            });
+                        }
+                    }
+                    catch
+                    {
+                        // Если и старый формат не подходит, пробуем как список UnifiedProduct
+                        var products = JsonSerializer.Deserialize<List<UnifiedProduct>>(json) ?? new List<UnifiedProduct>();
+                        unifiedProducts.AddRange(products);
                     }
                 }
             }
@@ -454,7 +494,7 @@ namespace Forecast.Services
                 double totalDeliveryDays = 0;
                 foreach (var item in itemsWithDelivery)
                 {
-                    totalDeliveryDays += (item.DeliveryDate.Value - item.OrderDate).TotalDays;
+                    totalDeliveryDays += (item.DeliveryDate!.Value - item.OrderDate).TotalDays;
                 }
                 
                 product.AverageDeliveryTime = totalDeliveryDays / itemsWithDelivery.Count;

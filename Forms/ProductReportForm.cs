@@ -133,7 +133,7 @@ namespace Forecast.Forms
                 
                 foreach (var product in _unifiedProducts.OrderBy(p => p.PrimaryName))
                 {
-                    productsListBox.Items.Add($"{product.PrimaryName} ({product.UnifiedArticle})");
+                    productsListBox.Items.Add($"{product.PrimaryName ?? "Без названия"} ({product.UnifiedArticle ?? "Без артикула"})");
                 }
                 
                 // Выбор первого товара в списке
@@ -193,8 +193,8 @@ namespace Forecast.Forms
                 // Заполнение таблицы информацией о товаре
                 int row = 0;
                 
-                AddTableRow(tableLayoutPanel, "Унифицированный артикул:", product.UnifiedArticle, row++);
-                AddTableRow(tableLayoutPanel, "Наименование:", product.PrimaryName, row++);
+                AddTableRow(tableLayoutPanel, "Унифицированный артикул:", product.UnifiedArticle ?? string.Empty, row++);
+                AddTableRow(tableLayoutPanel, "Наименование:", product.PrimaryName ?? string.Empty, row++);
                 AddTableRow(tableLayoutPanel, "Количество заказов:", product.OrderHistory.Count.ToString(), row++);
                 AddTableRow(tableLayoutPanel, "Средний интервал между заказами:", $"{Math.Round(product.AverageOrderInterval, 1)} дней", row++);
                 AddTableRow(tableLayoutPanel, "Среднее количество в заказе:", Math.Round(product.AverageOrderQuantity, 1).ToString(), row++);
@@ -215,7 +215,7 @@ namespace Forecast.Forms
                 nameVariationsTextBox.ScrollBars = ScrollBars.Vertical;
                 nameVariationsTextBox.Dock = DockStyle.Fill;
                 nameVariationsTextBox.Height = 60;
-                nameVariationsTextBox.Text = string.Join(Environment.NewLine, product.NameVariations);
+                nameVariationsTextBox.Text = string.Join(Environment.NewLine, product.NameVariations ?? new List<string>());
                 tableLayoutPanel.Controls.Add(nameVariationsTextBox, 1, row++);
                 
                 // Добавление вариаций артикулов
@@ -232,7 +232,7 @@ namespace Forecast.Forms
                 articleVariationsTextBox.ScrollBars = ScrollBars.Vertical;
                 articleVariationsTextBox.Dock = DockStyle.Fill;
                 articleVariationsTextBox.Height = 60;
-                articleVariationsTextBox.Text = string.Join(Environment.NewLine, product.ArticleVariations);
+                articleVariationsTextBox.Text = string.Join(Environment.NewLine, product.ArticleVariations ?? new List<string>());
                 tableLayoutPanel.Controls.Add(articleVariationsTextBox, 1, row++);
                 
                 generalPanel.Controls.Add(tableLayoutPanel);
@@ -252,7 +252,7 @@ namespace Forecast.Forms
             table.Controls.Add(label, 0, row);
             
             var valueLabel = new Label();
-            valueLabel.Text = valueText;
+            valueLabel.Text = valueText ?? string.Empty;
             valueLabel.Dock = DockStyle.Fill;
             valueLabel.TextAlign = ContentAlignment.MiddleLeft;
             table.Controls.Add(valueLabel, 1, row);
@@ -283,11 +283,18 @@ namespace Forecast.Forms
                         Артикул = item.ArticleNumber,
                         Заказано = item.OrderedQuantity,
                         Поставлено = item.DeliveredQuantity,
-                        Дата_поставки = item.DeliveryDate.HasValue ? item.DeliveryDate.Value.ToShortDateString() : "",
+                        Дата_поставки = item.DeliveryDate.HasValue ? item.DeliveryDate.Value.ToShortDateString() : string.Empty,
                         Примечание = item.Notes
                     }).ToList();
                 
                 historyGridView.DataSource = dataSource;
+                if (historyGridView.Columns != null)
+                {
+                    foreach (DataGridViewColumn col in historyGridView.Columns)
+                    {
+                        col.SortMode = DataGridViewColumnSortMode.Automatic;
+                    }
+                }
             }
         }
         
@@ -333,15 +340,15 @@ namespace Forecast.Forms
                         
                         if (coefficient > 1.2) // Высокая сезонность (более 20% выше среднего)
                         {
-                            e.CellStyle.BackColor = Color.LightGreen;
+                            e.CellStyle!.BackColor = Color.LightGreen;
                         }
                         else if (coefficient < 0.8) // Низкая сезонность (более 20% ниже среднего)
                         {
-                            e.CellStyle.BackColor = Color.LightSalmon;
+                            e.CellStyle!.BackColor = Color.LightSalmon;
                         }
                         else // Нормальная сезонность
                         {
-                            e.CellStyle.BackColor = Color.LightYellow;
+                            e.CellStyle!.BackColor = Color.LightYellow;
                         }
                     }
                 };
@@ -535,14 +542,14 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события выбора товара в списке
         /// </summary>
-        private void ProductsListBox_SelectedIndexChanged(object sender, EventArgs e)
+        private void ProductsListBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
             var productsListBox = sender as ListBox;
-            
-            if (productsListBox != null && productsListBox.SelectedIndex >= 0)
+
+            if (productsListBox?.SelectedItem != null && productsListBox.SelectedIndex >= 0)
             {
                 // Получение выбранного товара
-                string selectedItem = productsListBox.SelectedItem.ToString();
+                string selectedItem = productsListBox.SelectedItem.ToString() ?? string.Empty;
                 string unifiedArticle = selectedItem.Substring(selectedItem.LastIndexOf('(') + 1, selectedItem.LastIndexOf(')') - selectedItem.LastIndexOf('(') - 1);
                 
                 var product = _unifiedProducts.FirstOrDefault(p => p.UnifiedArticle == unifiedArticle);
@@ -558,7 +565,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события нажатия кнопки "Печать"
         /// </summary>
-        private void PrintButton_Click(object sender, EventArgs e)
+        private void PrintButton_Click(object? sender, EventArgs e)
         {
             MessageBox.Show("Функция печати отчета по товарам будет реализована в следующей версии.", 
                 "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -567,7 +574,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события нажатия кнопки "Экспорт"
         /// </summary>
-        private void ExportButton_Click(object sender, EventArgs e)
+        private void ExportButton_Click(object? sender, EventArgs e)
         {
             MessageBox.Show("Функция экспорта отчета по товарам будет реализована в следующей версии.", 
                 "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);

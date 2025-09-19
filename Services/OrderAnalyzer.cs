@@ -196,7 +196,7 @@ namespace Forecast.Services
                 var deliveryTimes = new List<double>();
                 foreach (var item in itemsWithDelivery)
                 {
-                    double days = (item.DeliveryDate.Value - item.OrderDate).TotalDays;
+                    double days = (item.DeliveryDate!.Value - item.OrderDate).TotalDays;
                     deliveryTimes.Add(days);
                 }
                 

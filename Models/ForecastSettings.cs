@@ -60,6 +60,21 @@ namespace Forecast.Models
         public double MinConfidenceThreshold { get; set; } = 70.0;
         
         /// <summary>
+        /// Базовый каталог для хранения конфигурационных файлов
+        /// </summary>
+        public string ConfigurationDirectory { get; set; } = GetDefaultConfigurationDirectory();
+        
+        /// <summary>
+        /// Путь к файлу соответствий товаров (относительно базового каталога)
+        /// </summary>
+        public string MappingFilePath { get; set; } = GetDefaultMappingFilePath();
+        
+        /// <summary>
+        /// Путь к файлу прогнозов (относительно базового каталога)  
+        /// </summary>
+        public string ForecastsFilePath { get; set; } = GetDefaultForecastsFilePath();
+        
+        /// <summary>
         /// Загрузка настроек из файла
         /// </summary>
         /// <param name="filePath">Путь к файлу настроек</param>
@@ -133,6 +148,60 @@ namespace Forecast.Models
         }
         
         /// <summary>
+        /// Получение базового каталога конфигураций по умолчанию
+        /// </summary>
+        /// <returns>Путь к каталогу конфигураций</returns>
+        public static string GetDefaultConfigurationDirectory()
+        {
+            try
+            {
+                string appDirectory = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? Environment.CurrentDirectory;
+                return appDirectory;
+            }
+            catch
+            {
+                // В случае ошибки возвращаем текущую директорию
+                return Environment.CurrentDirectory;
+            }
+        }
+        
+        /// <summary>
+        /// Получение пути к файлу соответствий по умолчанию
+        /// </summary>
+        /// <returns>Имя файла соответствий</returns>
+        public static string GetDefaultMappingFilePath()
+        {
+            return "mapping.json";
+        }
+        
+        /// <summary>
+        /// Получение пути к файлу прогнозов по умолчанию
+        /// </summary>
+        /// <returns>Имя файла прогнозов</returns>
+        public static string GetDefaultForecastsFilePath()
+        {
+            return "forecasts.json";
+        }
+        
+        /// <summary>
+        /// Получение полного пути к файлу соответствий
+        /// </summary>
+        /// <returns>Полный путь к файлу соответствий</returns>
+        public string GetFullMappingFilePath()
+        {
+            return Path.Combine(ConfigurationDirectory, MappingFilePath);
+        }
+        
+        /// <summary>
+        /// Получение полного пути к файлу прогнозов
+        /// </summary>
+        /// <returns>Полный путь к файлу прогнозов</returns>
+        public string GetFullForecastsFilePath()
+        {
+            return Path.Combine(ConfigurationDirectory, ForecastsFilePath);
+        }
+        
+        /// <summary>
         /// Описание влияния параметра на прогноз
         /// </summary>
         /// <param name="parameterName">Имя параметра</param>
@@ -160,6 +229,12 @@ namespace Forecast.Models
                 nameof(DefaultSeasonalityCoefficient) => "Коэффициент сезонности по умолчанию для месяцев без выраженной сезонности. Значение 1.0 означает отсутствие сезонного влияния.",
                 
                 nameof(MinConfidenceThreshold) => "Минимальный порог уверенности прогноза (в процентах). Прогнозы с уверенностью ниже этого значения не будут отображаться в отчетах. Значение 0 означает, что будут показаны все прогнозы.",
+                
+                nameof(ConfigurationDirectory) => "Базовый каталог для хранения всех конфигурационных файлов приложения (соответствия, прогнозы и др.). По умолчанию используется каталог с приложением.",
+                
+                nameof(MappingFilePath) => "Имя файла соответствий товаров (относительно базового каталога). Этот файл содержит настройки унификации наименований и артикулов для корректного группирования товаров при анализе.",
+                
+                nameof(ForecastsFilePath) => "Имя файла прогнозов (относительно базового каталога). В этом файле сохраняются результаты прогнозирования для последующего использования.",
                 
                 _ => "Описание недоступно"
             };

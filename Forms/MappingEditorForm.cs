@@ -21,32 +21,32 @@ namespace Forecast.Forms
         private MappingDatabase _mappingDatabase = new MappingDatabase();
         
         // Текущая выбранная группа
-        private MappingGroup _selectedGroup;
+        private MappingGroup _selectedGroup = null!;
         
         // Компоненты интерфейса
-        private SplitContainer _mainSplitContainer;
-        private ListBox _groupsListBox;
-        private Button _addGroupButton;
-        private Button _removeGroupButton;
-        private Button _renameGroupButton;
-        private TextBox _groupNameTextBox;
+        private SplitContainer _mainSplitContainer = null!;
+        private ListBox _groupsListBox = null!;
+        private Button _addGroupButton = null!;
+        private Button _removeGroupButton = null!;
+        private Button _renameGroupButton = null!;
+        private TextBox _groupNameTextBox = null!;
         
-        private ListBox _variationsListBox;
-        private Button _addVariationButton;
-        private Button _removeVariationButton;
-        private TextBox _nameVariationTextBox;
-        private TextBox _articleVariationTextBox;
-        private RadioButton _nameRadioButton;
-        private RadioButton _articleRadioButton;
+        private ListBox _variationsListBox = null!;
+        private Button _addVariationButton = null!;
+        private Button _removeVariationButton = null!;
+        private TextBox _nameVariationTextBox = null!;
+        private TextBox _articleVariationTextBox = null!;
+        private RadioButton _nameRadioButton = null!;
+        private RadioButton _articleRadioButton = null!;
         
-        private Label _unifiedArticleLabel;
-        private TextBox _unifiedArticleTextBox;
-        private Label _primaryNameLabel;
-        private TextBox _primaryNameTextBox;
-        private Button _applyUnifiedButton;
+        private Label _unifiedArticleLabel = null!;
+        private TextBox _unifiedArticleTextBox = null!;
+        private Label _primaryNameLabel = null!;
+        private TextBox _primaryNameTextBox = null!;
+        private Button _applyUnifiedButton = null!;
         
-        private Button _saveButton;
-        private Button _cancelButton;
+        private Button _saveButton = null!;
+        private Button _cancelButton = null!;
         
         /// <summary>
         /// Конструктор формы редактора соответствий
@@ -139,8 +139,7 @@ namespace Forecast.Forms
             menuStrip.Items.Add(groupsMenuItem);
             menuStrip.Items.Add(variationsMenuItem);
             
-            // Добавляем меню на форму
-            Controls.Add(menuStrip);
+			// Меню будет добавлено через ToolStripContainer (см. ниже)
             
             // Настраиваем левую панель (список групп)
             var leftPanel = new Panel
@@ -443,10 +442,27 @@ namespace Forecast.Forms
             bottomPanel.Controls.Add(_saveButton);
             bottomPanel.Controls.Add(_cancelButton);
             
-            // Добавляем компоненты на форму
-            Controls.Add(_mainSplitContainer);
-            Controls.Add(bottomPanel);
+			// Создаем контейнер для меню и содержимого, чтобы меню не перекрывало контент
+			var toolStripContainer = new ToolStripContainer
+			{
+				Dock = DockStyle.Fill
+			};
+
+			// Добавляем меню в верхнюю панель контейнера
+			toolStripContainer.TopToolStripPanel.Controls.Add(menuStrip);
+
+			// Добавляем нижнюю панель и контент в область содержимого контейнера
+			bottomPanel.Dock = DockStyle.Bottom;
+			_mainSplitContainer.Dock = DockStyle.Fill;
+			toolStripContainer.ContentPanel.Controls.Add(_mainSplitContainer);
+			toolStripContainer.ContentPanel.Controls.Add(bottomPanel);
+
+			// Добавляем контейнер на форму
+			Controls.Add(toolStripContainer);
             
+			// Указываем главное меню формы
+			this.MainMenuStrip = menuStrip;
+
             // При загрузке формы настроим разделитель
             this.Shown += (s, e) => 
             {
@@ -497,11 +513,11 @@ namespace Forecast.Forms
                         {
                             var group = new MappingGroup
                             {
-                                Name = product.PrimaryName,
-                                UnifiedArticle = product.UnifiedArticle,
-                                PrimaryName = product.PrimaryName,
-                                NameVariations = product.NameVariations,
-                                ArticleVariations = product.ArticleVariations
+                                Name = product.PrimaryName ?? string.Empty,
+                                UnifiedArticle = product.UnifiedArticle ?? string.Empty,
+                                PrimaryName = product.PrimaryName ?? string.Empty,
+                                NameVariations = product.NameVariations ?? new List<string>(),
+                                ArticleVariations = product.ArticleVariations ?? new List<string>()
                             };
                             
                             _mappingDatabase.Groups.Add(group);
@@ -577,7 +593,7 @@ namespace Forecast.Forms
             else
             {
                 // Если групп нет, очищаем интерфейс
-                _selectedGroup = null;
+                _selectedGroup = new MappingGroup { Name = string.Empty, UnifiedArticle = string.Empty, PrimaryName = string.Empty, NameVariations = new List<string>(), ArticleVariations = new List<string>() };
                 UpdateVariationsList();
                 UpdateUnifiedValues();
             }
@@ -871,18 +887,20 @@ namespace Forecast.Forms
                 }
                 
                 // Получаем выбранную вариацию
-                object selectedObj = _variationsListBox.SelectedItem;
+                object? selectedObj = _variationsListBox.SelectedItem;
                 if (selectedObj == null)
                 {
                     MessageBox.Show("Ошибка при получении выбранной вариации", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
                 
-                string selectedItem = selectedObj.ToString();
+            string selectedItem = selectedObj.ToString() ?? string.Empty;
                 
                 // Определяем тип вариации и извлекаем значение
                 bool isArticle = selectedItem.StartsWith("Артикул:");
-                string value = selectedItem.Substring(isArticle ? 9 : 13).Trim();
+                string value = selectedItem.Length >= (isArticle ? 9 : 13)
+                    ? selectedItem.Substring(isArticle ? 9 : 13).Trim()
+                    : string.Empty;
                 
                 // Удаляем вариацию из соответствующего списка
                 bool removed = false;
@@ -931,7 +949,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события изменения выбранной группы
         /// </summary>
-        private void GroupsListBox_SelectedIndexChanged(object sender, EventArgs e)
+        private void GroupsListBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
             // Сохраняем изменения текущей группы
             SaveCurrentGroupChanges();
@@ -945,7 +963,7 @@ namespace Forecast.Forms
             }
             else
             {
-                _selectedGroup = null;
+                _selectedGroup = new MappingGroup { Name = string.Empty, UnifiedArticle = string.Empty, PrimaryName = string.Empty, NameVariations = new List<string>(), ArticleVariations = new List<string>() };
             }
             
             // Обновляем интерфейс

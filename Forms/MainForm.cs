@@ -56,9 +56,11 @@ namespace Forecast.Forms
             string appDataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Forecast");
             Directory.CreateDirectory(appDataPath); // Создаем директорию, если она не существует
             
-            _mappingFilePath = Path.Combine(appDataPath, "item_mapping.json");
-            _forecastsFilePath = Path.Combine(appDataPath, "forecasts.json");
             _settingsFilePath = Path.Combine(appDataPath, "forecast_settings.json");
+            
+            // Пути к конфигурационным файлам будут установлены после загрузки настроек
+            _mappingFilePath = Path.Combine(ForecastSettings.GetDefaultConfigurationDirectory(), ForecastSettings.GetDefaultMappingFilePath());
+            _forecastsFilePath = Path.Combine(ForecastSettings.GetDefaultConfigurationDirectory(), ForecastSettings.GetDefaultForecastsFilePath());
             
             // Настройка формы
             this.Text = "Прогнозирование заявок";
@@ -131,6 +133,10 @@ namespace Forecast.Forms
             var forecastSettingsMenuItem = new ToolStripMenuItem("Настройки прогноза");
             forecastSettingsMenuItem.Click += ForecastSettingsMenuItem_Click;
             settingsMenuItem.DropDownItems.Add(forecastSettingsMenuItem);
+            
+            var pathSettingsMenuItem = new ToolStripMenuItem("Настройки путей");
+            pathSettingsMenuItem.Click += PathSettingsMenuItem_Click;
+            settingsMenuItem.DropDownItems.Add(pathSettingsMenuItem);
             
             // Пункт меню "Отчеты"
             var reportsMenuItem = new ToolStripMenuItem("Отчеты");
@@ -222,6 +228,9 @@ namespace Forecast.Forms
                     _forecastSettings.SaveToFile(_settingsFilePath);
                 }
                 
+                // Обновляем пути к файлам из настроек
+                UpdateApplicationPaths();
+                
                 // Загрузка базы соответствий товаров
                 if (File.Exists(_mappingFilePath))
                 {
@@ -245,7 +254,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия файла Excel
         /// </summary>
-        private void OpenFileMenuItem_Click(object sender, EventArgs e)
+        private void OpenFileMenuItem_Click(object? sender, EventArgs e)
         {
             var openFileDialog = new OpenFileDialog
             {
@@ -263,7 +272,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события обработки данных
         /// </summary>
-        private void ProcessDataMenuItem_Click(object sender, EventArgs e)
+        private void ProcessDataMenuItem_Click(object? sender, EventArgs e)
         {
             if (_orderItems == null || _orderItems.Count == 0)
             {
@@ -302,7 +311,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события анализа данных
         /// </summary>
-        private void AnalyzeDataMenuItem_Click(object sender, EventArgs e)
+        private void AnalyzeDataMenuItem_Click(object? sender, EventArgs e)
         {
             if (_unifiedProducts == null || _unifiedProducts.Count == 0)
             {
@@ -347,7 +356,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события формирования прогнозов
         /// </summary>
-        private void GenerateForecastsMenuItem_Click(object sender, EventArgs e)
+        private void GenerateForecastsMenuItem_Click(object? sender, EventArgs e)
         {
             if (_unifiedProducts == null || _unifiedProducts.Count == 0)
             {
@@ -398,7 +407,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия таблицы заказов
         /// </summary>
-        private void OrderTableMenuItem_Click(object sender, EventArgs e)
+        private void OrderTableMenuItem_Click(object? sender, EventArgs e)
         {
             if (_forecasts == null || _forecasts.Count == 0)
             {
@@ -463,7 +472,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события закрытия формы
         /// </summary>
-        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
             try
             {
@@ -494,7 +503,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик нажатия на пункт меню "Выход"
         /// </summary>
-        private void ExitMenuItem_Click(object sender, EventArgs e)
+        private void ExitMenuItem_Click(object? sender, EventArgs e)
         {
             // Закрываем форму, что вызовет событие FormClosing
             this.Close();
@@ -503,7 +512,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия отчета по товарам
         /// </summary>
-        private void ProductReportMenuItem_Click(object sender, EventArgs e)
+        private void ProductReportMenuItem_Click(object? sender, EventArgs e)
         {
             if (_unifiedProducts == null || _unifiedProducts.Count == 0)
             {
@@ -528,7 +537,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия окна "О программе"
         /// </summary>
-        private void AboutMenuItem_Click(object sender, EventArgs e)
+        private void AboutMenuItem_Click(object? sender, EventArgs e)
         {
             MessageBox.Show(
                 "Прогнозирование заявок\n\n" +
@@ -543,7 +552,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия окна настроек прогноза
         /// </summary>
-        private void ForecastSettingsMenuItem_Click(object sender, EventArgs e)
+        private void ForecastSettingsMenuItem_Click(object? sender, EventArgs e)
         {
             try
             {
@@ -648,6 +657,7 @@ namespace Forecast.Forms
                     
                     AddSettingGroup(settingsTable, 9, "Минимальный порог уверенности (%)", _forecastSettings.MinConfidenceThreshold.ToString("F1"), 
                         ForecastSettings.GetParameterDescription(nameof(ForecastSettings.MinConfidenceThreshold)), valueControls, nameof(ForecastSettings.MinConfidenceThreshold));
+                    
                     
                     settingsPanel.Controls.Add(settingsTable);
                     
@@ -815,10 +825,61 @@ namespace Forecast.Forms
             valueControls[parameterKey] = valueTextBox;
         }
         
+        
+        
+        /// <summary>
+        /// Обработчик события открытия окна настроек путей
+        /// </summary>
+        private void PathSettingsMenuItem_Click(object? sender, EventArgs e)
+        {
+            try
+            {
+                using (var pathSettingsForm = new PathSettingsForm(_forecastSettings))
+                {
+                    if (pathSettingsForm.ShowDialog() == DialogResult.OK)
+                    {
+                        // Обновляем пути к файлам в приложении
+                        UpdateApplicationPaths();
+                        
+                        // Сохраняем обновленные настройки
+                        _forecastSettings.SaveToFile(_settingsFilePath);
+                        
+                        // Обновляем статус
+                        var statusStrip = this.Controls.OfType<StatusStrip>().FirstOrDefault();
+                        if (statusStrip != null)
+                        {
+                            var statusLabel = statusStrip.Items.OfType<ToolStripStatusLabel>().FirstOrDefault();
+                            if (statusLabel != null)
+                            {
+                                statusLabel.Text = "Настройки путей обновлены";
+                            }
+                        }
+                        
+                        MessageBox.Show(
+                            "Настройки путей успешно сохранены.\n\n" +
+                            $"Каталог конфигураций: {_forecastSettings.ConfigurationDirectory}\n" +
+                            $"Файл соответствий: {_forecastSettings.MappingFilePath}\n" +
+                            $"Файл прогнозов: {_forecastSettings.ForecastsFilePath}",
+                            "Настройки сохранены",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Ошибка при работе с настройками путей: {ex.Message}",
+                    "Ошибка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+        
         /// <summary>
         /// Обработчик события открытия окна настроек соответствий
         /// </summary>
-        private void MappingMenuItem_Click(object sender, EventArgs e)
+        private void MappingMenuItem_Click(object? sender, EventArgs e)
         {
             try
             {
@@ -989,29 +1050,57 @@ namespace Forecast.Forms
                 {
                     if (e.ColumnIndex == 0 && e.RowIndex >= 0) // Столбец "Приоритет"
                     {
+                        if (e.Value == null) return;
                         int priority = Convert.ToInt32(e.Value);
                         
                         switch (priority)
                         {
                             case 1: // Наивысший приоритет
-                                e.CellStyle.BackColor = Color.Red;
-                                e.CellStyle.ForeColor = Color.White;
+                                e.CellStyle!.BackColor = Color.Red;
+                                e.CellStyle!.ForeColor = Color.White;
                                 break;
                             case 2: // Высокий приоритет
-                                e.CellStyle.BackColor = Color.Orange;
+                                e.CellStyle!.BackColor = Color.Orange;
                                 break;
                             case 3: // Средний приоритет
-                                e.CellStyle.BackColor = Color.Yellow;
+                                e.CellStyle!.BackColor = Color.Yellow;
                                 break;
                             case 4: // Низкий приоритет
-                                e.CellStyle.BackColor = Color.LightGreen;
+                                e.CellStyle!.BackColor = Color.LightGreen;
                                 break;
                             case 5: // Самый низкий приоритет
-                                e.CellStyle.BackColor = Color.LightBlue;
+                                e.CellStyle!.BackColor = Color.LightBlue;
                                 break;
                         }
                     }
                 };
+            }
+        }
+        
+        /// <summary>
+        /// Обновление путей к файлам приложения на основе настроек
+        /// </summary>
+        private void UpdateApplicationPaths()
+        {
+            try
+            {
+                // Создаем каталог конфигураций если его нет
+                if (!Directory.Exists(_forecastSettings.ConfigurationDirectory))
+                {
+                    Directory.CreateDirectory(_forecastSettings.ConfigurationDirectory);
+                }
+                
+                // Обновляем пути к конфигурационным файлам
+                _mappingFilePath = _forecastSettings.GetFullMappingFilePath();
+                _forecastsFilePath = _forecastSettings.GetFullForecastsFilePath();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Ошибка при обновлении путей конфигурации: {ex.Message}",
+                    "Ошибка",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         }
         

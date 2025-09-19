@@ -342,13 +342,13 @@ namespace Forecast.Services
             }
             
             // Добавляем информацию о сезонности
-            int nextMonth = product.NextPredictedOrderDate.Value.Month - 1;
+            int nextMonth = product.NextPredictedOrderDate!.Value.Month - 1;
             double seasonalCoefficient = product.SeasonalityCoefficients[nextMonth];
             
             if (seasonalCoefficient != 1) // Если есть сезонность
             {
                 string seasonalityDirection = seasonalCoefficient > 1 ? "повышение" : "снижение";
-                notes.Add($"Сезонный фактор: {seasonalityDirection} на {Math.Round(Math.Abs(seasonalCoefficient - 1) * 100)}% в {product.NextPredictedOrderDate.Value.ToString("MMMM")}."); 
+                notes.Add($"Сезонный фактор: {seasonalityDirection} на {Math.Round(Math.Abs(seasonalCoefficient - 1) * 100)}% в {product.NextPredictedOrderDate!.Value.ToString("MMMM")}."); 
             }
             
             // Добавляем информацию о частоте заказов
