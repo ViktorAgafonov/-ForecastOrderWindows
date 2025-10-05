@@ -50,11 +50,11 @@ namespace Forecast.Models
         /// <summary>
         /// Дополнительная информация о заявке
         /// </summary>
-        public string Notes { get; set; }
+        public string Notes { get; set; } = string.Empty;
         
         /// <summary>
         /// Унифицированный артикул для группировки схожих товаров
         /// </summary>
-        public string UnifiedArticle { get; set; }
+        public string UnifiedArticle { get; set; } = string.Empty;
     }
 }

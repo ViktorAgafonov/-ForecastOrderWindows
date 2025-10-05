@@ -196,8 +196,11 @@ namespace Forecast.Services
                 var deliveryTimes = new List<double>();
                 foreach (var item in itemsWithDelivery)
                 {
-                    double days = (item.DeliveryDate.Value - item.OrderDate).TotalDays;
-                    deliveryTimes.Add(days);
+                    if (item.DeliveryDate.HasValue)
+                    {
+                        double days = (item.DeliveryDate.Value - item.OrderDate).TotalDays;
+                        deliveryTimes.Add(days);
+                    }
                 }
                 
                 // Удаляем выбросы
@@ -226,28 +229,40 @@ namespace Forecast.Services
         #region Вспомогательные методы
         
         /// <summary>
-        /// Удаление выбросов из списка значений
+        /// Удаление выбросов из списка значений с использованием метода IQR
         /// </summary>
         private List<double> FilterOutliers(List<double> values)
         {
             if (values.Count < 4) // Недостаточно данных для надежного определения выбросов
                 return values;
-            
+
             // Сортируем значения
             var sortedValues = values.OrderBy(v => v).ToList();
-            
-            // Рассчитываем квартили
+
+            // Правильный расчет квартилей
             int n = sortedValues.Count;
-            double q1 = sortedValues[n / 4];
-            double q3 = sortedValues[3 * n / 4];
-            
+
+            // Q1 - первый квартиль (25-й перцентиль)
+            double q1Index = (n - 1) * 0.25;
+            int q1Lower = (int)Math.Floor(q1Index);
+            int q1Upper = (int)Math.Ceiling(q1Index);
+            double q1 = q1Lower == q1Upper ? sortedValues[q1Lower] :
+                        sortedValues[q1Lower] + (sortedValues[q1Upper] - sortedValues[q1Lower]) * (q1Index - q1Lower);
+
+            // Q3 - третий квартиль (75-й перцентиль)
+            double q3Index = (n - 1) * 0.75;
+            int q3Lower = (int)Math.Floor(q3Index);
+            int q3Upper = (int)Math.Ceiling(q3Index);
+            double q3 = q3Lower == q3Upper ? sortedValues[q3Lower] :
+                        sortedValues[q3Lower] + (sortedValues[q3Upper] - sortedValues[q3Lower]) * (q3Index - q3Lower);
+
             // Рассчитываем межквартильный размах
             double iqr = q3 - q1;
-            
-            // Определяем границы для выбросов
+
+            // Определяем границы для выбросов (метод Тьюки)
             double lowerBound = q1 - 1.5 * iqr;
             double upperBound = q3 + 1.5 * iqr;
-            
+
             // Отфильтровываем выбросы
             return sortedValues.Where(v => v >= lowerBound && v <= upperBound).ToList();
         }

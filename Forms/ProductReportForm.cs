@@ -193,8 +193,8 @@ namespace Forecast.Forms
                 // Заполнение таблицы информацией о товаре
                 int row = 0;
                 
-                AddTableRow(tableLayoutPanel, "Унифицированный артикул:", product.UnifiedArticle, row++);
-                AddTableRow(tableLayoutPanel, "Наименование:", product.PrimaryName, row++);
+                AddTableRow(tableLayoutPanel, "Унифицированный артикул:", product.UnifiedArticle ?? string.Empty, row++);
+                AddTableRow(tableLayoutPanel, "Наименование:", product.PrimaryName ?? string.Empty, row++);
                 AddTableRow(tableLayoutPanel, "Количество заказов:", product.OrderHistory.Count.ToString(), row++);
                 AddTableRow(tableLayoutPanel, "Средний интервал между заказами:", $"{Math.Round(product.AverageOrderInterval, 1)} дней", row++);
                 AddTableRow(tableLayoutPanel, "Среднее количество в заказе:", Math.Round(product.AverageOrderQuantity, 1).ToString(), row++);
@@ -277,10 +277,10 @@ namespace Forecast.Forms
                     .Select(item => new
                     {
                         Дата_заявки = item.OrderDate.ToShortDateString(),
-                        Номер_заявки = item.OrderNumber,
-                        Номер_позиции = item.PositionNumber,
-                        Наименование = item.ProductName,
-                        Артикул = item.ArticleNumber,
+                        Номер_заявки = item.OrderNumber ?? string.Empty,
+                        Номер_позиции = item.PositionNumber ?? string.Empty,
+                        Наименование = item.ProductName ?? string.Empty,
+                        Артикул = item.ArticleNumber ?? string.Empty,
                         Заказано = item.OrderedQuantity,
                         Поставлено = item.DeliveredQuantity,
                         Дата_поставки = item.DeliveryDate.HasValue ? item.DeliveryDate.Value.ToShortDateString() : "",
@@ -327,21 +327,23 @@ namespace Forecast.Forms
                 // Настройка цветов для коэффициентов сезонности
                 seasonalityGridView.CellFormatting += (sender, e) =>
                 {
-                    if (e.ColumnIndex == 1 && e.RowIndex >= 0) // Столбец "Коэффициент_сезонности"
+                    if (e.ColumnIndex == 1 && e.RowIndex >= 0 && e.Value != null && e.CellStyle != null) // Столбец "Коэффициент_сезонности"
                     {
-                        double coefficient = Convert.ToDouble(e.Value);
-                        
-                        if (coefficient > 1.2) // Высокая сезонность (более 20% выше среднего)
+                        var valueString = e.Value.ToString();
+                        if (!string.IsNullOrEmpty(valueString) && double.TryParse(valueString, out double coefficient))
                         {
-                            e.CellStyle.BackColor = Color.LightGreen;
-                        }
-                        else if (coefficient < 0.8) // Низкая сезонность (более 20% ниже среднего)
-                        {
-                            e.CellStyle.BackColor = Color.LightSalmon;
-                        }
-                        else // Нормальная сезонность
-                        {
-                            e.CellStyle.BackColor = Color.LightYellow;
+                            if (coefficient > 1.2) // Высокая сезонность (более 20% выше среднего)
+                            {
+                                e.CellStyle.BackColor = Color.LightGreen;
+                            }
+                            else if (coefficient < 0.8) // Низкая сезонность (более 20% ниже среднего)
+                            {
+                                e.CellStyle.BackColor = Color.LightSalmon;
+                            }
+                            else // Нормальная сезонность
+                            {
+                                e.CellStyle.BackColor = Color.LightYellow;
+                            }
                         }
                     }
                 };
@@ -354,6 +356,8 @@ namespace Forecast.Forms
         /// <param name="product">Выбранный товар</param>
         private void ShowForecast(UnifiedProduct product)
         {
+            if (product == null) return;
+            
             var forecastPanel = this.Controls.Find("forecastPanel", true).FirstOrDefault() as Panel;
             
             if (forecastPanel != null)
@@ -473,7 +477,7 @@ namespace Forecast.Forms
                 var notes = new List<string>();
                 
                 // Тренд объемов заказов
-                if (product.OrderHistory.Count >= 2)
+                if (product.OrderHistory != null && product.OrderHistory.Count >= 2)
                 {
                     var sortedHistory = product.OrderHistory.OrderBy(item => item.OrderDate).ToList();
                     double firstQuantity = sortedHistory.First().OrderedQuantity;
@@ -505,15 +509,18 @@ namespace Forecast.Forms
                 }
                 
                 // Сезонность
-                if (product.NextPredictedOrderDate.HasValue)
+                if (product.NextPredictedOrderDate.HasValue && product.SeasonalityCoefficients != null)
                 {
                     int nextMonth = product.NextPredictedOrderDate.Value.Month - 1;
-                    double seasonalCoefficient = product.SeasonalityCoefficients[nextMonth];
-                    
-                    if (Math.Abs(seasonalCoefficient - 1) > 0.1) // Если есть значимая сезонность
+                    if (nextMonth >= 0 && nextMonth < product.SeasonalityCoefficients.Length)
                     {
-                        string seasonalityDirection = seasonalCoefficient > 1 ? "повышение" : "снижение";
-                        notes.Add($"Сезонный фактор: {seasonalityDirection} на {Math.Round(Math.Abs(seasonalCoefficient - 1) * 100)}% в {product.NextPredictedOrderDate.Value.ToString("MMMM")}.");
+                        double seasonalCoefficient = product.SeasonalityCoefficients[nextMonth];
+                        
+                        if (Math.Abs(seasonalCoefficient - 1) > 0.1) // Если есть значимая сезонность
+                        {
+                            string seasonalityDirection = seasonalCoefficient > 1 ? "повышение" : "снижение";
+                            notes.Add($"Сезонный фактор: {seasonalityDirection} на {Math.Round(Math.Abs(seasonalCoefficient - 1) * 100)}% в {product.NextPredictedOrderDate.Value.ToString("MMMM")}.");
+                        }
                     }
                 }
                 
@@ -535,42 +542,72 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события выбора товара в списке
         /// </summary>
-        private void ProductsListBox_SelectedIndexChanged(object sender, EventArgs e)
+        private void ProductsListBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            var productsListBox = sender as ListBox;
-            
-            if (productsListBox != null && productsListBox.SelectedIndex >= 0)
+            try
             {
-                // Получение выбранного товара
-                string selectedItem = productsListBox.SelectedItem.ToString();
-                string unifiedArticle = selectedItem.Substring(selectedItem.LastIndexOf('(') + 1, selectedItem.LastIndexOf(')') - selectedItem.LastIndexOf('(') - 1);
+                var productsListBox = this.Controls.Find("productsListBox", true).FirstOrDefault() as ListBox;
                 
-                var product = _unifiedProducts.FirstOrDefault(p => p.UnifiedArticle == unifiedArticle);
-                
-                if (product != null)
+                if (productsListBox != null && productsListBox.SelectedItem != null)
                 {
-                    // Отображение информации о выбранном товаре
-                    ShowProductInfo(product);
+                    var selectedProduct = productsListBox.SelectedItem as UnifiedProduct;
+                    if (selectedProduct != null)
+                    {
+                        ShowProductInfo(selectedProduct);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при отображении информации о товаре: {ex.Message}", "Ошибка", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         
         /// <summary>
         /// Обработчик события нажатия кнопки "Печать"
         /// </summary>
-        private void PrintButton_Click(object sender, EventArgs e)
+        private void PrintButton_Click(object? sender, EventArgs e)
         {
-            MessageBox.Show("Функция печати отчета по товарам будет реализована в следующей версии.", 
-                "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                // Здесь будет логика печати отчета
+                MessageBox.Show("Функция печати будет реализована в следующей версии.", "Информация", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при печати: {ex.Message}", "Ошибка", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
         
         /// <summary>
         /// Обработчик события нажатия кнопки "Экспорт"
         /// </summary>
-        private void ExportButton_Click(object sender, EventArgs e)
+        private void ExportButton_Click(object? sender, EventArgs e)
         {
-            MessageBox.Show("Функция экспорта отчета по товарам будет реализована в следующей версии.", 
-                "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            try
+            {
+                using (var saveFileDialog = new SaveFileDialog())
+                {
+                    saveFileDialog.Filter = "Excel файлы (*.xlsx)|*.xlsx|CSV файлы (*.csv)|*.csv";
+                    saveFileDialog.Title = "Экспорт отчета";
+                    saveFileDialog.FileName = $"Отчет_по_товарам_{DateTime.Now:yyyyMMdd}";
+                    
+                    if (saveFileDialog.ShowDialog() == DialogResult.OK)
+                    {
+                        // Здесь будет логика экспорта
+                        MessageBox.Show("Функция экспорта будет реализована в следующей версии.", "Информация", 
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при экспорте: {ex.Message}", "Ошибка", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
         
         #endregion

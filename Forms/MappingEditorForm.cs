@@ -21,32 +21,32 @@ namespace Forecast.Forms
         private MappingDatabase _mappingDatabase = new MappingDatabase();
         
         // Текущая выбранная группа
-        private MappingGroup _selectedGroup;
+        private MappingGroup? _selectedGroup;
         
         // Компоненты интерфейса
-        private SplitContainer _mainSplitContainer;
-        private ListBox _groupsListBox;
-        private Button _addGroupButton;
-        private Button _removeGroupButton;
-        private Button _renameGroupButton;
-        private TextBox _groupNameTextBox;
+        private SplitContainer? _mainSplitContainer;
+        private ListBox? _groupsListBox;
+        private Button? _addGroupButton;
+        private Button? _removeGroupButton;
+        private Button? _renameGroupButton;
+        private TextBox? _groupNameTextBox;
         
-        private ListBox _variationsListBox;
-        private Button _addVariationButton;
-        private Button _removeVariationButton;
-        private TextBox _nameVariationTextBox;
-        private TextBox _articleVariationTextBox;
-        private RadioButton _nameRadioButton;
-        private RadioButton _articleRadioButton;
+        private ListBox? _variationsListBox;
+        private Button? _addVariationButton;
+        private Button? _removeVariationButton;
+        private TextBox? _nameVariationTextBox;
+        private TextBox? _articleVariationTextBox;
+        private RadioButton? _nameRadioButton;
+        private RadioButton? _articleRadioButton;
         
-        private Label _unifiedArticleLabel;
-        private TextBox _unifiedArticleTextBox;
-        private Label _primaryNameLabel;
-        private TextBox _primaryNameTextBox;
-        private Button _applyUnifiedButton;
+        private Label? _unifiedArticleLabel;
+        private TextBox? _unifiedArticleTextBox;
+        private Label? _primaryNameLabel;
+        private TextBox? _primaryNameTextBox;
+        private Button? _applyUnifiedButton;
         
-        private Button _saveButton;
-        private Button _cancelButton;
+        private Button? _saveButton;
+        private Button? _cancelButton;
         
         /// <summary>
         /// Конструктор формы редактора соответствий
@@ -497,11 +497,11 @@ namespace Forecast.Forms
                         {
                             var group = new MappingGroup
                             {
-                                Name = product.PrimaryName,
-                                UnifiedArticle = product.UnifiedArticle,
-                                PrimaryName = product.PrimaryName,
-                                NameVariations = product.NameVariations,
-                                ArticleVariations = product.ArticleVariations
+                                Name = product.PrimaryName ?? string.Empty,
+                                UnifiedArticle = product.UnifiedArticle ?? string.Empty,
+                                PrimaryName = product.PrimaryName ?? string.Empty,
+                                NameVariations = product.NameVariations ?? new List<string>(),
+                                ArticleVariations = product.ArticleVariations ?? new List<string>()
                             };
                             
                             _mappingDatabase.Groups.Add(group);
@@ -523,15 +523,12 @@ namespace Forecast.Forms
         }
         
         /// <summary>
-        /// Сохранение данных соответствий в файл
+        /// Сохранение настроек соответствий в файл
         /// </summary>
         private void SaveMappingData()
         {
             try
             {
-                // Сохраняем текущие изменения в выбранной группе
-                SaveCurrentGroupChanges();
-                
                 // Сериализуем базу данных соответствий в JSON
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(_mappingDatabase, options);
@@ -558,10 +555,12 @@ namespace Forecast.Forms
         }
         
         /// <summary>
-        /// Обновление списка групп в интерфейсе
+        /// Обновление списка групп
         /// </summary>
         private void UpdateGroupsList()
         {
+            if (_groupsListBox == null) return;
+            
             _groupsListBox.Items.Clear();
             
             foreach (var group in _mappingDatabase.Groups)
@@ -569,64 +568,44 @@ namespace Forecast.Forms
                 _groupsListBox.Items.Add(group.Name);
             }
             
-            // Выбираем первую группу, если она есть
+            // Выбираем первую группу, если есть
             if (_groupsListBox.Items.Count > 0)
             {
                 _groupsListBox.SelectedIndex = 0;
             }
-            else
-            {
-                // Если групп нет, очищаем интерфейс
-                _selectedGroup = null;
-                UpdateVariationsList();
-                UpdateUnifiedValues();
-            }
-            
-            UpdateControlsState();
         }
         
         /// <summary>
-        /// Обновление списка вариаций в интерфейсе
+        /// Обновление списка вариаций для выбранной группы
         /// </summary>
         private void UpdateVariationsList()
         {
+            if (_variationsListBox == null || _selectedGroup == null) return;
+            
             _variationsListBox.Items.Clear();
             
-            if (_selectedGroup != null)
+            // Добавляем вариации наименований
+            foreach (var name in _selectedGroup.NameVariations)
             {
-                // Добавляем вариации наименований
-                foreach (var name in _selectedGroup.NameVariations)
-                {
-                    _variationsListBox.Items.Add($"Наименование: {name}");
-                }
-                
-                // Добавляем вариации артикулов
-                foreach (var article in _selectedGroup.ArticleVariations)
-                {
-                    _variationsListBox.Items.Add($"Артикул: {article}");
-                }
+                _variationsListBox.Items.Add($"Наименование: {name}");
             }
             
-            UpdateControlsState();
+            // Добавляем вариации артикулов
+            foreach (var article in _selectedGroup.ArticleVariations)
+            {
+                _variationsListBox.Items.Add($"Артикул: {article}");
+            }
         }
         
         /// <summary>
-        /// Обновление унифицированных значений в интерфейсе
+        /// Обновление унифицированных значений
         /// </summary>
         private void UpdateUnifiedValues()
         {
-            if (_selectedGroup != null)
-            {
-                _unifiedArticleTextBox.Text = _selectedGroup.UnifiedArticle;
-                _primaryNameTextBox.Text = _selectedGroup.PrimaryName;
-            }
-            else
-            {
-                _unifiedArticleTextBox.Text = string.Empty;
-                _primaryNameTextBox.Text = string.Empty;
-            }
+            if (_unifiedArticleTextBox == null || _primaryNameTextBox == null || _selectedGroup == null) return;
             
-            UpdateControlsState();
+            _unifiedArticleTextBox.Text = _selectedGroup.UnifiedArticle ?? "";
+            _primaryNameTextBox.Text = _selectedGroup.PrimaryName ?? "";
         }
         
         /// <summary>
@@ -634,110 +613,84 @@ namespace Forecast.Forms
         /// </summary>
         private void UpdateControlsState()
         {
+            if (_groupsListBox == null || _variationsListBox == null || 
+                _addGroupButton == null || _removeGroupButton == null || 
+                _renameGroupButton == null || _addVariationButton == null || 
+                _removeVariationButton == null || _applyUnifiedButton == null) return;
+            
             bool hasGroups = _groupsListBox.Items.Count > 0;
             bool hasSelectedGroup = _selectedGroup != null;
+            bool hasVariations = _variationsListBox.Items.Count > 0;
             bool hasSelectedVariation = _variationsListBox.SelectedIndex >= 0;
             
-            // Кнопки управления группами
             _removeGroupButton.Enabled = hasSelectedGroup;
             _renameGroupButton.Enabled = hasSelectedGroup;
-            
-            // Кнопки управления вариациями
             _addVariationButton.Enabled = hasSelectedGroup;
-            _removeVariationButton.Enabled = hasSelectedGroup && hasSelectedVariation;
-            _nameVariationTextBox.Enabled = hasSelectedGroup;
-            _articleVariationTextBox.Enabled = hasSelectedGroup;
-            _nameRadioButton.Enabled = hasSelectedGroup;
-            _articleRadioButton.Enabled = hasSelectedGroup;
-            
-            // Поля унифицированных значений
-            _unifiedArticleTextBox.Enabled = hasSelectedGroup;
-            _primaryNameTextBox.Enabled = hasSelectedGroup;
+            _removeVariationButton.Enabled = hasSelectedVariation;
             _applyUnifiedButton.Enabled = hasSelectedGroup;
-            
-            // Правая панель в целом
-            _mainSplitContainer.Panel2.Enabled = hasSelectedGroup;
         }
         
         /// <summary>
-        /// Сохранение изменений текущей выбранной группы
-        /// </summary>
-        private void SaveCurrentGroupChanges()
-        {
-            if (_selectedGroup != null)
-            {
-                _selectedGroup.UnifiedArticle = _unifiedArticleTextBox.Text;
-                _selectedGroup.PrimaryName = _primaryNameTextBox.Text;
-            }
-        }
-        
-        /// <summary>
-        /// Добавление новой группы соответствий
+        /// Добавление новой группы
         /// </summary>
         private void AddNewGroup()
         {
+            if (_groupNameTextBox == null) return;
+            
             string groupName = _groupNameTextBox.Text.Trim();
             
             if (string.IsNullOrEmpty(groupName))
             {
-                MessageBox.Show(
-                    "Введите название группы.",
-                    "Предупреждение",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                MessageBox.Show("Введите название группы!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             
-            // Проверяем, что группа с таким названием не существует
+            // Проверяем, что группа с таким именем не существует
             if (_mappingDatabase.Groups.Any(g => g.Name.Equals(groupName, StringComparison.OrdinalIgnoreCase)))
             {
-                MessageBox.Show(
-                    "Группа с таким названием уже существует.",
-                    "Предупреждение",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                MessageBox.Show("Группа с таким названием уже существует!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            
-            // Сохраняем изменения текущей группы
-            SaveCurrentGroupChanges();
             
             // Создаем новую группу
             var newGroup = new MappingGroup
             {
                 Name = groupName,
+                NameVariations = new List<string>(),
+                ArticleVariations = new List<string>(),
                 UnifiedArticle = "",
-                PrimaryName = groupName
+                PrimaryName = ""
             };
             
-            // Добавляем в базу данных
+            // Добавляем группу в базу данных
             _mappingDatabase.Groups.Add(newGroup);
             
-            // Обновляем список групп
+            // Обновляем интерфейс
             UpdateGroupsList();
             
             // Выбираем новую группу
-            int index = _groupsListBox.Items.IndexOf(groupName);
-            if (index >= 0)
+            if (_groupsListBox != null)
             {
-                _groupsListBox.SelectedIndex = index;
+                _groupsListBox.SelectedItem = groupName;
             }
             
             // Очищаем поле ввода
             _groupNameTextBox.Text = "";
+            
+            UpdateControlsState();
         }
         
         /// <summary>
-        /// Удаление выбранной группы соответствий
+        /// Удаление выбранной группы
         /// </summary>
         private void RemoveSelectedGroup()
         {
-            if (_selectedGroup == null)
-                return;
+            if (_groupsListBox == null || _selectedGroup == null) return;
             
-            // Запрашиваем подтверждение
+            string groupName = _selectedGroup.Name ?? "";
+            
             var result = MessageBox.Show(
-                $"Вы действительно хотите удалить группу \"{_selectedGroup.Name}\"?",
+                $"Вы уверены, что хотите удалить группу '{groupName}'?\n\nЭто действие нельзя отменить.",
                 "Подтверждение удаления",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
@@ -747,210 +700,189 @@ namespace Forecast.Forms
                 // Удаляем группу из базы данных
                 _mappingDatabase.Groups.Remove(_selectedGroup);
                 
-                // Обновляем список групп
+                // Обновляем интерфейс
                 UpdateGroupsList();
+                
+                // Очищаем выбранную группу
+                _selectedGroup = null;
+                UpdateVariationsList();
+                UpdateUnifiedValues();
+                UpdateControlsState();
             }
         }
         
         /// <summary>
-        /// Переименование выбранной группы соответствий
+        /// Переименование выбранной группы
         /// </summary>
         private void RenameSelectedGroup()
         {
-            if (_selectedGroup == null)
-                return;
+            if (_groupNameTextBox == null || _selectedGroup == null) return;
             
             string newName = _groupNameTextBox.Text.Trim();
             
             if (string.IsNullOrEmpty(newName))
             {
-                MessageBox.Show(
-                    "Введите новое название группы.",
-                    "Предупреждение",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                MessageBox.Show("Введите новое название группы!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             
-            // Проверяем, что группа с таким названием не существует
+            // Проверяем, что группа с таким именем не существует
             if (_mappingDatabase.Groups.Any(g => g != _selectedGroup && g.Name.Equals(newName, StringComparison.OrdinalIgnoreCase)))
             {
-                MessageBox.Show(
-                    "Группа с таким названием уже существует.",
-                    "Предупреждение",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                MessageBox.Show("Группа с таким названием уже существует!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            
-            // Запоминаем индекс выбранной группы
-            int selectedIndex = _groupsListBox.SelectedIndex;
             
             // Переименовываем группу
             _selectedGroup.Name = newName;
             
-            // Обновляем список групп
+            // Обновляем интерфейс
             UpdateGroupsList();
             
-            // Восстанавливаем выбор
-            if (selectedIndex >= 0 && selectedIndex < _groupsListBox.Items.Count)
+            // Выбираем переименованную группу
+            if (_groupsListBox != null)
             {
-                _groupsListBox.SelectedIndex = selectedIndex;
+                _groupsListBox.SelectedItem = newName;
             }
             
             // Очищаем поле ввода
             _groupNameTextBox.Text = "";
+            
+            UpdateControlsState();
         }
         
         /// <summary>
-        /// Добавление новой вариации в выбранную группу
+        /// Добавление вариации в выбранную группу
         /// </summary>
         private void AddVariation()
         {
-            if (_selectedGroup == null)
-                return;
+            if (_nameVariationTextBox == null || _articleVariationTextBox == null || 
+                _nameRadioButton == null || _selectedGroup == null) return;
             
-            // Определяем, какой тип вариации добавляем
-            bool isArticle = _articleRadioButton.Checked;
-            string variation = isArticle ? _articleVariationTextBox.Text.Trim() : _nameVariationTextBox.Text.Trim();
+            string variation = "";
+            bool isNameVariation = _nameRadioButton.Checked;
             
-            if (string.IsNullOrEmpty(variation))
+            if (isNameVariation)
             {
-                MessageBox.Show(
-                    $"Введите текст вариации {(isArticle ? "артикула" : "наименования")}.",
-                    "Предупреждение",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
+                variation = _nameVariationTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(variation))
+                {
+                    MessageBox.Show("Введите вариацию наименования!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                // Проверяем, что такая вариация уже не существует
+                if (_selectedGroup.NameVariations.Contains(variation, StringComparer.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("Такая вариация наименования уже существует!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                _selectedGroup.NameVariations.Add(variation);
+            }
+            else
+            {
+                variation = _articleVariationTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(variation))
+                {
+                    MessageBox.Show("Введите вариацию артикула!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                // Проверяем, что такая вариация уже не существует
+                if (_selectedGroup.ArticleVariations.Contains(variation, StringComparer.OrdinalIgnoreCase))
+                {
+                    MessageBox.Show("Такая вариация артикула уже существует!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
+                _selectedGroup.ArticleVariations.Add(variation);
             }
             
-            // Проверяем, что такой вариации еще нет
-            var existingList = isArticle ? _selectedGroup.ArticleVariations : _selectedGroup.NameVariations;
-            
-            if (existingList.Any(v => v.Equals(variation, StringComparison.OrdinalIgnoreCase)))
-            {
-                MessageBox.Show(
-                    $"Такая вариация {(isArticle ? "артикула" : "наименования")} уже существует в этой группе.",
-                    "Предупреждение",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
-            
-            // Добавляем вариацию
-            existingList.Add(variation);
-            
-            // Обновляем список вариаций
+            // Обновляем интерфейс
             UpdateVariationsList();
             
-            // Очищаем поле ввода
-            if (isArticle)
-                _articleVariationTextBox.Text = "";
-            else
-                _nameVariationTextBox.Text = "";
+            // Очищаем поля ввода
+            _nameVariationTextBox.Text = "";
+            _articleVariationTextBox.Text = "";
+            
+            UpdateControlsState();
         }
         
         /// <summary>
-        /// Удаление выбранной вариации из группы
+        /// Удаление выбранной вариации
         /// </summary>
         private void RemoveSelectedVariation()
         {
-            try
+            if (_variationsListBox == null || _selectedGroup == null) return;
+            
+            int selectedIndex = _variationsListBox.SelectedIndex;
+            if (selectedIndex < 0) return;
+            
+            string selectedItem = _variationsListBox.Items[selectedIndex].ToString() ?? "";
+            
+            var result = MessageBox.Show(
+                $"Вы уверены, что хотите удалить вариацию '{selectedItem}'?",
+                "Подтверждение удаления",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            
+            if (result == DialogResult.Yes)
             {
-                // Проверяем, что есть выбранная группа и выбранная вариация
-                if (_selectedGroup == null)
+                // Определяем тип вариации и удаляем её
+                if (selectedItem.StartsWith("Наименование: "))
                 {
-                    MessageBox.Show("Не выбрана группа соответствий", "Предупреждение", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    string name = selectedItem.Substring("Наименование: ".Length);
+                    _selectedGroup.NameVariations.Remove(name);
+                }
+                else if (selectedItem.StartsWith("Артикул: "))
+                {
+                    string article = selectedItem.Substring("Артикул: ".Length);
+                    _selectedGroup.ArticleVariations.Remove(article);
                 }
                 
-                if (_variationsListBox.SelectedIndex < 0)
-                {
-                    MessageBox.Show("Не выбрана вариация для удаления", "Предупреждение", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                
-                // Получаем выбранную вариацию
-                object selectedObj = _variationsListBox.SelectedItem;
-                if (selectedObj == null)
-                {
-                    MessageBox.Show("Ошибка при получении выбранной вариации", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-                
-                string selectedItem = selectedObj.ToString();
-                
-                // Определяем тип вариации и извлекаем значение
-                bool isArticle = selectedItem.StartsWith("Артикул:");
-                string value = selectedItem.Substring(isArticle ? 9 : 13).Trim();
-                
-                // Удаляем вариацию из соответствующего списка
-                bool removed = false;
-                if (isArticle)
-                {
-                    removed = _selectedGroup.ArticleVariations.Remove(value);
-                }
-                else
-                {
-                    removed = _selectedGroup.NameVariations.Remove(value);
-                }
-                
-                // Обновляем список вариаций
+                // Обновляем интерфейс
                 UpdateVariationsList();
-                
-                // Сообщаем об успешном удалении
-                if (removed)
-                {
-                    MessageBox.Show($"Вариация {(isArticle ? "артикула" : "наименования")} \"{value}\" успешно удалена", "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка при удалении вариации: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                UpdateControlsState();
             }
         }
         
         /// <summary>
-        /// Применение унифицированных значений
+        /// Применение унифицированных значений к выбранной группе
         /// </summary>
         private void ApplyUnifiedValues()
         {
-            if (_selectedGroup == null)
-                return;
+            if (_unifiedArticleTextBox == null || _primaryNameTextBox == null || _selectedGroup == null) return;
             
             _selectedGroup.UnifiedArticle = _unifiedArticleTextBox.Text.Trim();
             _selectedGroup.PrimaryName = _primaryNameTextBox.Text.Trim();
             
-            MessageBox.Show(
-                "Унифицированные значения применены.",
-                "Информация",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            MessageBox.Show("Унифицированные значения применены к группе.", "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         
         /// <summary>
-        /// Обработчик события изменения выбранной группы
+        /// Обработчик изменения выбранной группы
         /// </summary>
-        private void GroupsListBox_SelectedIndexChanged(object sender, EventArgs e)
+        private void GroupsListBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
-            // Сохраняем изменения текущей группы
-            SaveCurrentGroupChanges();
+            if (_groupsListBox == null) return;
             
-            // Получаем выбранную группу
             int selectedIndex = _groupsListBox.SelectedIndex;
             
             if (selectedIndex >= 0 && selectedIndex < _mappingDatabase.Groups.Count)
             {
                 _selectedGroup = _mappingDatabase.Groups[selectedIndex];
+                UpdateVariationsList();
+                UpdateUnifiedValues();
             }
             else
             {
                 _selectedGroup = null;
+                UpdateVariationsList();
+                UpdateUnifiedValues();
             }
             
-            // Обновляем интерфейс
-            UpdateVariationsList();
-            UpdateUnifiedValues();
+            UpdateControlsState();
         }
         
         /// <summary>

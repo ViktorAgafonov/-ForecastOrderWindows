@@ -46,6 +46,6 @@ namespace Forecast.Models
         /// <summary>
         /// Дополнительные комментарии к прогнозу
         /// </summary>
-        public string Notes { get; set; }
+        public string Notes { get; set; } = string.Empty;
     }
 }

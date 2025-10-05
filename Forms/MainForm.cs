@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Forecast.Models;
 using Forecast.Services;
+using System.Text.Json;
 
 namespace Forecast.Forms
 {
@@ -18,7 +19,7 @@ namespace Forecast.Forms
         private readonly IDataProcessor _dataProcessor;
         private readonly IOrderAnalyzer _orderAnalyzer;
         private readonly IForecastEngine _forecastEngine;
-        private IRecommendationSystem _recommendationSystem; // Убрали readonly для возможности переинициализации
+        private readonly IRecommendationSystem _recommendationSystem;
         
         // Данные
         private List<OrderItem> _orderItems;
@@ -160,7 +161,7 @@ namespace Forecast.Forms
             
             var statusLabel = new ToolStripStatusLabel("Готово");
             statusStrip.Items.Add(statusLabel);
-            
+
             // Создание вкладок
             var tabControl = new TabControl();
             tabControl.Dock = DockStyle.Fill;
@@ -245,48 +246,45 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия файла Excel
         /// </summary>
-        private void OpenFileMenuItem_Click(object sender, EventArgs e)
+        private void OpenFileMenuItem_Click(object? sender, EventArgs e)
         {
-            var openFileDialog = new OpenFileDialog
+            using (var openFileDialog = new OpenFileDialog())
             {
-                Filter = "Excel файлы (*.xlsx)|*.xlsx|Все файлы (*.*)|*.*",
-                Title = "Выберите файл с данными о заявках"
-            };
-            
-            if (openFileDialog.ShowDialog() == DialogResult.OK)
-            {
-                _excelFilePath = openFileDialog.FileName;
-                LoadExcelData();
+                openFileDialog.Filter = "Excel файлы (*.xlsx;*.xls)|*.xlsx;*.xls|Все файлы (*.*)|*.*";
+                openFileDialog.Title = "Выберите Excel файл с данными заказов";
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    _excelFilePath = openFileDialog.FileName;
+                    LoadAndProcessExcelData();
+                }
             }
         }
         
         /// <summary>
         /// Обработчик события обработки данных
         /// </summary>
-        private void ProcessDataMenuItem_Click(object sender, EventArgs e)
+        private void ProcessDataMenuItem_Click(object? sender, EventArgs e)
         {
-            if (_orderItems == null || _orderItems.Count == 0)
-            {
-                MessageBox.Show("Сначала необходимо загрузить данные из Excel файла.", "Предупреждение", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
             try
             {
+                if (_orderItems == null || _orderItems.Count == 0)
+                {
+                    MessageBox.Show("Сначала загрузите данные из Excel файла.", "Предупреждение", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
                 Cursor = Cursors.WaitCursor;
                 
-                // Унификация наименований и артикулов
+                // Обработка данных и создание унифицированных товаров
                 _unifiedProducts = _dataProcessor.UnifyProducts(_orderItems);
-                
-                // Сохранение базы соответствий
-                _dataProcessor.SaveItemMapping(_unifiedProducts, _mappingFilePath);
                 
                 // Обновление таблицы унифицированных товаров
                 UpdateProductsGrid();
                 
-                MessageBox.Show($"Обработка данных завершена. Унифицировано {_unifiedProducts.Count} товаров.", 
-                    "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Обработано {_unifiedProducts.Count} уникальных товаров.", "Информация", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
@@ -302,29 +300,23 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события анализа данных
         /// </summary>
-        private void AnalyzeDataMenuItem_Click(object sender, EventArgs e)
+        private void AnalyzeDataMenuItem_Click(object? sender, EventArgs e)
         {
-            if (_unifiedProducts == null || _unifiedProducts.Count == 0)
-            {
-                MessageBox.Show("Сначала необходимо обработать данные.", "Предупреждение", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
             try
             {
+                if (_unifiedProducts == null || _unifiedProducts.Count == 0)
+                {
+                    MessageBox.Show("Сначала обработайте данные.", "Предупреждение", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
                 Cursor = Cursors.WaitCursor;
                 
-                // Анализ частоты заказов
+                // Анализ данных и расчет статистик
                 _orderAnalyzer.AnalyzeOrderFrequency(_unifiedProducts);
-                
-                // Анализ сезонности
-                _orderAnalyzer.AnalyzeSeasonality(_unifiedProducts);
-                
-                // Анализ объемов заказов
                 _orderAnalyzer.AnalyzeOrderVolumes(_unifiedProducts);
-                
-                // Анализ сроков поставки
+                _orderAnalyzer.AnalyzeSeasonality(_unifiedProducts);
                 _orderAnalyzer.AnalyzeDeliveryTimes(_unifiedProducts);
                 
                 // Обновление таблицы унифицированных товаров
@@ -347,46 +339,31 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события формирования прогнозов
         /// </summary>
-        private void GenerateForecastsMenuItem_Click(object sender, EventArgs e)
+        private void GenerateForecastsMenuItem_Click(object? sender, EventArgs e)
         {
-            if (_unifiedProducts == null || _unifiedProducts.Count == 0)
-            {
-                MessageBox.Show("Сначала необходимо обработать и проанализировать данные.", "Предупреждение", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
-            // Проверяем и инициализируем recommendationSystem если он не инициализирован
-            if (_recommendationSystem == null)
-            {
-                _recommendationSystem = new RecommendationSystem();
-            }
-            
             try
             {
+                if (_unifiedProducts == null || _unifiedProducts.Count == 0)
+                {
+                    MessageBox.Show("Сначала обработайте и проанализируйте данные.", "Предупреждение", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
                 Cursor = Cursors.WaitCursor;
                 
-                // Формирование прогнозов с использованием настроек
-                DateTime startDate = DateTime.Now;
-                DateTime endDate = startDate.AddDays(_forecastSettings.DaysAhead);
-                
-                _forecasts = _forecastEngine.GenerateFullForecasts(_unifiedProducts, startDate, endDate);
-                
-                // Расчет приоритетов заказов
-                _forecasts = _recommendationSystem.CalculateOrderPriorities(_forecasts);
-                
-                // Сохранение прогнозов
-                _recommendationSystem.SaveRecommendations(_forecasts, _forecastsFilePath);
+                // Генерация прогнозов
+                _forecasts = _forecastEngine.GenerateFullForecasts(_unifiedProducts, DateTime.Now, DateTime.Now.AddDays(_forecastSettings.DaysAhead));
                 
                 // Обновление таблицы прогнозов
                 UpdateForecastsGrid();
                 
-                MessageBox.Show($"Сформировано {_forecasts.Count} прогнозов на период с {startDate.ToShortDateString()} по {endDate.ToShortDateString()}.", 
-                    "Информация", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show($"Сгенерировано {_forecasts.Count} прогнозов.", "Информация", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при формировании прогнозов: {ex.Message}", "Ошибка", 
+                MessageBox.Show($"Ошибка при генерации прогнозов: {ex.Message}", "Ошибка", 
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -398,41 +375,20 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия таблицы заказов
         /// </summary>
-        private void OrderTableMenuItem_Click(object sender, EventArgs e)
+        private void OrderTableMenuItem_Click(object? sender, EventArgs e)
         {
-            if (_forecasts == null || _forecasts.Count == 0)
-            {
-                MessageBox.Show("Сначала необходимо сформировать прогнозы.", "Предупреждение", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
             try
             {
-                // Проверяем, что все необходимые объекты инициализированы
-                if (_forecastSettings == null)
+                if (_forecasts == null || _forecasts.Count == 0)
                 {
-                    _forecastSettings = new ForecastSettings();
+                    MessageBox.Show("Сначала сгенерируйте прогнозы.", "Предупреждение", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
                 }
-
-                // Логируем состояние перед созданием формы
-
-
-                // Создание формы
-                var tableForm = new OrderTableForm(_forecasts, _recommendationSystem, _forecastSettings);
-
-
-                // Отображение формы
-                try
-                {
-                    tableForm.ShowDialog();
-
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка при отображении формы: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    throw;
-                }
+                
+                // Создание и отображение формы таблицы заказов
+                var orderTableForm = new OrderTableForm(_forecasts, _recommendationSystem, _forecastSettings);
+                orderTableForm.ShowDialog();
             }
             catch (Exception ex)
             {
@@ -463,57 +419,50 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события закрытия формы
         /// </summary>
-        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
         {
             try
             {
                 // Сохраняем настройки перед закрытием
-                if (_forecastSettings != null)
+                SaveSettings();
+                
+                // Сохраняем прогнозы, если они есть
+                if (_forecasts != null && _forecasts.Count > 0)
                 {
-                    SaveSettings();
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    string json = JsonSerializer.Serialize(_forecasts, options);
+                    File.WriteAllText(_forecastsFilePath, json);
                 }
-                
-                // Сбрасываем данные анализа
-                _forecasts = new List<ForecastResult>();
-                
-                // Если нужно, можно также сбросить другие данные
-                _orderItems = new List<OrderItem>();
-                _unifiedProducts = new List<UnifiedProduct>();
-                
-                // Освобождаем ресурсы
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
             }
             catch (Exception ex)
             {
-                // Логируем ошибку, но не показываем пользователю при закрытии
-                MessageBox.Show($"Ошибка при закрытии приложения: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Ошибка при сохранении данных: {ex.Message}", "Ошибка", 
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         
         /// <summary>
         /// Обработчик нажатия на пункт меню "Выход"
         /// </summary>
-        private void ExitMenuItem_Click(object sender, EventArgs e)
+        private void ExitMenuItem_Click(object? sender, EventArgs e)
         {
-            // Закрываем форму, что вызовет событие FormClosing
-            this.Close();
+            Close();
         }
         
         /// <summary>
         /// Обработчик события открытия отчета по товарам
         /// </summary>
-        private void ProductReportMenuItem_Click(object sender, EventArgs e)
+        private void ProductReportMenuItem_Click(object? sender, EventArgs e)
         {
-            if (_unifiedProducts == null || _unifiedProducts.Count == 0)
-            {
-                MessageBox.Show("Сначала необходимо обработать данные.", "Предупреждение", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-            
             try
             {
+                if (_unifiedProducts == null || _unifiedProducts.Count == 0)
+                {
+                    MessageBox.Show("Сначала обработайте данные.", "Предупреждение", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                
                 // Создание и отображение формы отчета по товарам
                 var productReportForm = new ProductReportForm(_unifiedProducts);
                 productReportForm.ShowDialog();
@@ -528,13 +477,18 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия окна "О программе"
         /// </summary>
-        private void AboutMenuItem_Click(object sender, EventArgs e)
+        private void AboutMenuItem_Click(object? sender, EventArgs e)
         {
             MessageBox.Show(
-                "Прогнозирование заявок\n\n" +
-                "Версия 1.0\n\n" +
-                "Программа для прогнозирования будущих заявок на основе исторических данных.\n\n" +
-                " 2025",
+                "Система прогнозирования заказов\n\n" +
+                "Версия 1.0\n" +
+                "Разработано для автоматизации процесса планирования заказов\n\n" +
+                "Функции:\n" +
+                "• Загрузка данных из Excel\n" +
+                "• Анализ истории заказов\n" +
+                "• Прогнозирование будущих заказов\n" +
+                "• Управление соответствиями товаров\n" +
+                "• Генерация отчетов",
                 "О программе",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -543,201 +497,137 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия окна настроек прогноза
         /// </summary>
-        private void ForecastSettingsMenuItem_Click(object sender, EventArgs e)
+        private void ForecastSettingsMenuItem_Click(object? sender, EventArgs e)
         {
-            try
+            // Создание и отображение формы настроек прогнозирования
+            var settingsForm = new Form();
+            settingsForm.Text = "Настройки прогнозирования";
+            settingsForm.Size = new Size(600, 500);
+            settingsForm.StartPosition = FormStartPosition.CenterParent;
+            settingsForm.FormBorderStyle = FormBorderStyle.FixedDialog;
+            settingsForm.MaximizeBox = false;
+            settingsForm.MinimizeBox = false;
+            
+            // Создание таблицы для размещения элементов управления
+            var tableLayoutPanel = new TableLayoutPanel();
+            tableLayoutPanel.Dock = DockStyle.Fill;
+            tableLayoutPanel.ColumnCount = 2;
+            tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40F));
+            tableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60F));
+            tableLayoutPanel.Padding = new Padding(10);
+            
+            // Словарь для хранения элементов управления
+            var valueControls = new Dictionary<string, Control>();
+            
+            int rowIndex = 0;
+            
+            // Добавление настроек
+            AddSettingGroup(tableLayoutPanel, rowIndex++, "MinConfidenceThreshold", 
+                _forecastSettings.MinConfidenceThreshold.ToString(), 
+                "Минимальный порог уверенности для прогноза (%)", valueControls, "MinConfidenceThreshold");
+            
+            AddSettingGroup(tableLayoutPanel, rowIndex++, "DaysAhead", 
+                _forecastSettings.DaysAhead.ToString(), 
+                "Количество дней для прогноза вперед", valueControls, "DaysAhead");
+            
+            AddSettingGroup(tableLayoutPanel, rowIndex++, "SafetyFactorForOrderPlacement", 
+                _forecastSettings.SafetyFactorForOrderPlacement.ToString(), 
+                "Коэффициент запаса для расчета оптимальной даты размещения заказа", valueControls, "SafetyFactorForOrderPlacement");
+            
+            AddSettingGroup(tableLayoutPanel, rowIndex++, "DefaultSeasonalityCoefficient", 
+                _forecastSettings.DefaultSeasonalityCoefficient.ToString(), 
+                "Коэффициент сезонности по умолчанию", valueControls, "DefaultSeasonalityCoefficient");
+            
+            AddSettingGroup(tableLayoutPanel, rowIndex++, "StableVolumeThreshold", 
+                _forecastSettings.StableVolumeThreshold.ToString(), 
+                "Порог стабильности объемов заказов (%)", valueControls, "StableVolumeThreshold");
+            
+            AddSettingGroup(tableLayoutPanel, rowIndex++, "HighPriorityThreshold", 
+                _forecastSettings.HighPriorityThreshold.ToString(), 
+                "Порог высокого приоритета (дни)", valueControls, "HighPriorityThreshold");
+            
+            // Кнопки
+            var buttonPanel = new Panel();
+            buttonPanel.Dock = DockStyle.Bottom;
+            buttonPanel.Height = 50;
+            buttonPanel.Padding = new Padding(10);
+            
+            var saveButton = new Button();
+            saveButton.Text = "Сохранить";
+            saveButton.DialogResult = DialogResult.OK;
+            saveButton.Location = new Point(settingsForm.Width - 200, 10);
+            saveButton.Click += (s, e) =>
             {
-                // Создаем форму для редактирования настроек прогноза
-                using (var form = new Form())
+                try
                 {
-                    form.Text = "Настройки прогноза";
-                    form.Size = new Size(950, 650);
-                    form.StartPosition = FormStartPosition.CenterParent;
-                    form.MinimizeBox = false;
-                    form.MaximizeBox = true;
-                    form.FormBorderStyle = FormBorderStyle.Sizable;
-                    
-                    // Создаем главную панель с вертикальным расположением
-                    var mainPanel = new TableLayoutPanel
+                    // Сохранение значений из элементов управления
+                    if (valueControls.ContainsKey("MinConfidenceThreshold") && 
+                        valueControls["MinConfidenceThreshold"] is TextBox minConfidenceTextBox)
                     {
-                        Dock = DockStyle.Fill,
-                        ColumnCount = 1,
-                        RowCount = 2,
-                        Padding = new Padding(10)
-                    };
-                    
-                    mainPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-                    mainPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-                    
-                    // Создаем панель с параметрами
-                    var settingsPanel = new Panel
-                    {
-                        Dock = DockStyle.Fill,
-                        AutoScroll = true,
-                        Padding = new Padding(5)
-                    };
-                    
-                    // Добавляем заголовок
-                    var headerLabel = new Label
-                    {
-                        Text = "Настройки параметров прогнозирования",
-                        Font = new Font(form.Font.FontFamily, 12, FontStyle.Bold),
-                        Dock = DockStyle.Top,
-                        Height = 30,
-                        TextAlign = ContentAlignment.MiddleCenter
-                    };
-                    
-                    // Добавляем описание
-                    var descriptionHeaderLabel = new Label
-                    {
-                        Text = "Эти параметры влияют на алгоритм прогнозирования заказов и определение их приоритетов.",
-                        Dock = DockStyle.Top,
-                        Height = 30,
-                        TextAlign = ContentAlignment.MiddleCenter,
-                        ForeColor = Color.DarkBlue
-                    };
-                    
-                    settingsPanel.Controls.Add(descriptionHeaderLabel);
-                    settingsPanel.Controls.Add(headerLabel);
-                    
-                    // Словарь для хранения элементов управления значениями
-                    var valueControls = new Dictionary<string, Control>();
-                    
-                    // Создаем таблицу настроек
-                    var settingsTable = new TableLayoutPanel
-                    {
-                        Dock = DockStyle.Top,
-                        AutoSize = true,
-                        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                        CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
-                        Margin = new Padding(10, 70, 10, 10)
-                    };
-                    
-                    // Настраиваем колонки и строки
-                    settingsTable.ColumnCount = 2;
-                    settingsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25)); // Имя параметра
-                    settingsTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 75)); // Значение и описание
-                    
-                    // Добавляем настройки в виде групп
-                    AddSettingGroup(settingsTable, 0, "Количество дней для прогноза", _forecastSettings.DaysAhead.ToString(), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.DaysAhead)), valueControls, nameof(ForecastSettings.DaysAhead));
-                    
-                    AddSettingGroup(settingsTable, 1, "Мин. кол-во заказов для высокой уверенности", _forecastSettings.MinOrderHistoryForHighConfidence.ToString(), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.MinOrderHistoryForHighConfidence)), valueControls, nameof(ForecastSettings.MinOrderHistoryForHighConfidence));
-                    
-                    AddSettingGroup(settingsTable, 2, "Мин. кол-во заказов для средней уверенности", _forecastSettings.MinOrderHistoryForMediumConfidence.ToString(), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.MinOrderHistoryForMediumConfidence)), valueControls, nameof(ForecastSettings.MinOrderHistoryForMediumConfidence));
-                    
-                    AddSettingGroup(settingsTable, 3, "Коэффициент запаса для даты размещения", _forecastSettings.SafetyFactorForOrderPlacement.ToString("F2"), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.SafetyFactorForOrderPlacement)), valueControls, nameof(ForecastSettings.SafetyFactorForOrderPlacement));
-                    
-                    AddSettingGroup(settingsTable, 4, "Порог стабильности объемов (%)", _forecastSettings.StableVolumeThreshold.ToString("F1"), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.StableVolumeThreshold)), valueControls, nameof(ForecastSettings.StableVolumeThreshold));
-                    
-                    AddSettingGroup(settingsTable, 5, "Порог высокого приоритета (дни)", _forecastSettings.HighPriorityThreshold.ToString(), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.HighPriorityThreshold)), valueControls, nameof(ForecastSettings.HighPriorityThreshold));
-                    
-                    AddSettingGroup(settingsTable, 6, "Порог среднего приоритета (дни)", _forecastSettings.MediumPriorityThreshold.ToString(), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.MediumPriorityThreshold)), valueControls, nameof(ForecastSettings.MediumPriorityThreshold));
-                    
-                    AddSettingGroup(settingsTable, 7, "Порог низкого приоритета (дни)", _forecastSettings.LowPriorityThreshold.ToString(), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.LowPriorityThreshold)), valueControls, nameof(ForecastSettings.LowPriorityThreshold));
-                    
-                    AddSettingGroup(settingsTable, 8, "Коэффициент сезонности по умолчанию", _forecastSettings.DefaultSeasonalityCoefficient.ToString("F2"), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.DefaultSeasonalityCoefficient)), valueControls, nameof(ForecastSettings.DefaultSeasonalityCoefficient));
-                    
-                    AddSettingGroup(settingsTable, 9, "Минимальный порог уверенности (%)", _forecastSettings.MinConfidenceThreshold.ToString("F1"), 
-                        ForecastSettings.GetParameterDescription(nameof(ForecastSettings.MinConfidenceThreshold)), valueControls, nameof(ForecastSettings.MinConfidenceThreshold));
-                    
-                    settingsPanel.Controls.Add(settingsTable);
-                    
-                    // Добавляем панель кнопок
-                    var buttonPanel = new Panel();
-                    buttonPanel.Dock = DockStyle.Fill;
-                    
-                    var saveButton = new Button();
-                    saveButton.Text = "Сохранить";
-                    saveButton.DialogResult = DialogResult.OK;
-                    saveButton.Width = 120;
-                    saveButton.Height = 30;
-                    saveButton.Location = new Point(form.Width / 2 - 130, 10);
-                    saveButton.BackColor = Color.LightGreen;
-                    saveButton.FlatStyle = FlatStyle.Flat;
-                    saveButton.Click += (s, args) => 
-                    {
-                        try
-                        {
-                            // Обновляем настройки из элементов управления
-                            _forecastSettings.DaysAhead = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.DaysAhead)]).Text);
-                            _forecastSettings.MinOrderHistoryForHighConfidence = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.MinOrderHistoryForHighConfidence)]).Text);
-                            _forecastSettings.MinOrderHistoryForMediumConfidence = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.MinOrderHistoryForMediumConfidence)]).Text);
-                            _forecastSettings.SafetyFactorForOrderPlacement = double.Parse(((TextBox)valueControls[nameof(ForecastSettings.SafetyFactorForOrderPlacement)]).Text);
-                            _forecastSettings.StableVolumeThreshold = double.Parse(((TextBox)valueControls[nameof(ForecastSettings.StableVolumeThreshold)]).Text);
-                            _forecastSettings.HighPriorityThreshold = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.HighPriorityThreshold)]).Text);
-                            _forecastSettings.MediumPriorityThreshold = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.MediumPriorityThreshold)]).Text);
-                            _forecastSettings.LowPriorityThreshold = int.Parse(((TextBox)valueControls[nameof(ForecastSettings.LowPriorityThreshold)]).Text);
-                            _forecastSettings.DefaultSeasonalityCoefficient = double.Parse(((TextBox)valueControls[nameof(ForecastSettings.DefaultSeasonalityCoefficient)]).Text);
-                            _forecastSettings.MinConfidenceThreshold = double.Parse(((TextBox)valueControls[nameof(ForecastSettings.MinConfidenceThreshold)]).Text);
-                            
-                            // Сохраняем настройки в файл
-                            _forecastSettings.SaveToFile(_settingsFilePath);
-                            
-                            form.DialogResult = DialogResult.OK;
-                            form.Close();
-                        }
-                        catch (Exception ex)
-                        {
-                            MessageBox.Show(
-                                $"Ошибка при сохранении настроек: {ex.Message}",
-                                "Ошибка",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Error);
-                        }
-                    };
-                    
-                    var cancelButton = new Button();
-                    cancelButton.Text = "Отмена";
-                    cancelButton.DialogResult = DialogResult.Cancel;
-                    cancelButton.Width = 120;
-                    cancelButton.Height = 30;
-                    cancelButton.Location = new Point(form.Width / 2 + 10, 10);
-                    cancelButton.FlatStyle = FlatStyle.Flat;
-                    
-                    buttonPanel.Controls.Add(saveButton);
-                    buttonPanel.Controls.Add(cancelButton);
-                    
-                    // Добавляем панели в главную панель
-                    mainPanel.Controls.Add(settingsPanel, 0, 0);
-                    mainPanel.Controls.Add(buttonPanel, 0, 1);
-                    
-                    // Добавляем главную панель в форму
-                    form.Controls.Add(mainPanel);
-                    form.AcceptButton = saveButton;
-                    form.CancelButton = cancelButton;
-                    
-                    if (form.ShowDialog() == DialogResult.OK)
-                    {
-                        // Обновляем статус
-                        var statusStrip = this.Controls.OfType<StatusStrip>().FirstOrDefault();
-                        if (statusStrip != null)
-                        {
-                            var statusLabel = statusStrip.Items.OfType<ToolStripStatusLabel>().FirstOrDefault();
-                            if (statusLabel != null)
-                            {
-                                statusLabel.Text = "Настройки прогноза обновлены";
-                            }
-                        }
+                        if (double.TryParse(minConfidenceTextBox.Text, out double minConfidence))
+                            _forecastSettings.MinConfidenceThreshold = minConfidence;
                     }
+                    
+                    if (valueControls.ContainsKey("DaysAhead") && 
+                        valueControls["DaysAhead"] is TextBox daysAheadTextBox)
+                    {
+                        if (int.TryParse(daysAheadTextBox.Text, out int daysAhead))
+                            _forecastSettings.DaysAhead = daysAhead;
+                    }
+                    
+                    if (valueControls.ContainsKey("SafetyFactorForOrderPlacement") && 
+                        valueControls["SafetyFactorForOrderPlacement"] is TextBox safetyFactorTextBox)
+                    {
+                        if (double.TryParse(safetyFactorTextBox.Text, out double safetyFactor))
+                            _forecastSettings.SafetyFactorForOrderPlacement = safetyFactor;
+                    }
+                    
+                    if (valueControls.ContainsKey("DefaultSeasonalityCoefficient") && 
+                        valueControls["DefaultSeasonalityCoefficient"] is TextBox seasonalityWeightTextBox)
+                    {
+                        if (double.TryParse(seasonalityWeightTextBox.Text, out double seasonalityWeight))
+                            _forecastSettings.DefaultSeasonalityCoefficient = seasonalityWeight;
+                    }
+                    
+                    if (valueControls.ContainsKey("StableVolumeThreshold") && 
+                        valueControls["StableVolumeThreshold"] is TextBox stableVolumeThresholdTextBox)
+                    {
+                        if (double.TryParse(stableVolumeThresholdTextBox.Text, out double stableVolumeThreshold))
+                            _forecastSettings.StableVolumeThreshold = stableVolumeThreshold;
+                    }
+                    
+                    if (valueControls.ContainsKey("HighPriorityThreshold") && 
+                        valueControls["HighPriorityThreshold"] is TextBox highPriorityThresholdTextBox)
+                    {
+                        if (int.TryParse(highPriorityThresholdTextBox.Text, out int highPriorityThreshold))
+                            _forecastSettings.HighPriorityThreshold = highPriorityThreshold;
+                    }
+                    
+                    // Сохранение настроек
+                    SaveSettings();
+                    
+                    MessageBox.Show("Настройки сохранены.", "Информация", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(
-                    $"Ошибка при работе с настройками прогноза: {ex.Message}",
-                    "Ошибка",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при сохранении настроек: {ex.Message}", "Ошибка", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            
+            var cancelButton = new Button();
+            cancelButton.Text = "Отмена";
+            cancelButton.DialogResult = DialogResult.Cancel;
+            cancelButton.Location = new Point(settingsForm.Width - 100, 10);
+            
+            buttonPanel.Controls.Add(saveButton);
+            buttonPanel.Controls.Add(cancelButton);
+            
+            settingsForm.Controls.Add(tableLayoutPanel);
+            settingsForm.Controls.Add(buttonPanel);
+            
+            settingsForm.ShowDialog();
         }
         
         /// <summary>
@@ -818,7 +708,7 @@ namespace Forecast.Forms
         /// <summary>
         /// Обработчик события открытия окна настроек соответствий
         /// </summary>
-        private void MappingMenuItem_Click(object sender, EventArgs e)
+        private void MappingMenuItem_Click(object? sender, EventArgs e)
         {
             try
             {
@@ -877,26 +767,102 @@ namespace Forecast.Forms
         #region Вспомогательные методы
         
         /// <summary>
-        /// Загрузка данных из Excel файла
+        /// Загрузка и автоматическая обработка данных из Excel файла
+        /// </summary>
+        private void LoadAndProcessExcelData()
+        {
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                UpdateStatus("Загрузка данных из Excel...");
+
+                // Загрузка данных из Excel файла
+                _orderItems = _dataProcessor.LoadData(_excelFilePath);
+                UpdateDataGrid();
+                UpdateStatus($"Загружено {_orderItems.Count} записей. Обработка данных...");
+
+                // Автоматическая обработка данных
+                _unifiedProducts = _dataProcessor.UnifyProducts(_orderItems);
+                UpdateProductsGrid();
+                UpdateStatus($"Обработано {_unifiedProducts.Count} товаров. Анализ данных...");
+
+                // Автоматический анализ данных
+                _orderAnalyzer.AnalyzeOrderFrequency(_unifiedProducts);
+                _orderAnalyzer.AnalyzeOrderVolumes(_unifiedProducts);
+                _orderAnalyzer.AnalyzeSeasonality(_unifiedProducts);
+                _orderAnalyzer.AnalyzeDeliveryTimes(_unifiedProducts);
+                UpdateProductsGrid();
+                UpdateStatus("Анализ завершен. Формирование прогнозов...");
+
+                // Автоматическая генерация прогнозов
+                _forecasts = _forecastEngine.GenerateFullForecasts(_unifiedProducts, DateTime.Now,
+                    DateTime.Now.AddDays(_forecastSettings.DaysAhead));
+                UpdateForecastsGrid();
+                UpdateStatus("Готово");
+
+                // Автосохранение базы соответствий
+                _dataProcessor.SaveItemMapping(_unifiedProducts, _mappingFilePath);
+
+                MessageBox.Show(
+                    $"Обработка завершена:\n\n" +
+                    $"• Загружено записей: {_orderItems.Count}\n" +
+                    $"• Унифицировано товаров: {_unifiedProducts.Count}\n" +
+                    $"• Сгенерировано прогнозов: {_forecasts.Count}",
+                    "Информация",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus("Ошибка");
+                MessageBox.Show($"Ошибка при обработке данных: {ex.Message}", "Ошибка",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
+        }
+
+        /// <summary>
+        /// Обновление статуса в строке состояния
+        /// </summary>
+        private void UpdateStatus(string message)
+        {
+            var statusStrip = this.Controls.OfType<StatusStrip>().FirstOrDefault();
+            if (statusStrip != null)
+            {
+                var statusLabel = statusStrip.Items.OfType<ToolStripStatusLabel>().FirstOrDefault();
+                if (statusLabel != null)
+                {
+                    statusLabel.Text = message;
+                    statusStrip.Refresh();
+                    Application.DoEvents(); // Обновляем UI
+                }
+            }
+        }
+
+        /// <summary>
+        /// Загрузка данных из Excel файла (устаревший метод, оставлен для совместимости)
         /// </summary>
         private void LoadExcelData()
         {
             try
             {
                 Cursor = Cursors.WaitCursor;
-                
+
                 // Загрузка данных из Excel файла
                 _orderItems = _dataProcessor.LoadData(_excelFilePath);
-                
+
                 // Обновление таблицы данных
                 UpdateDataGrid();
-                
-                MessageBox.Show($"Загружено {_orderItems.Count} записей из файла.", "Информация", 
+
+                MessageBox.Show($"Загружено {_orderItems.Count} записей из файла.", "Информация",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при загрузке данных: {ex.Message}", "Ошибка", 
+                MessageBox.Show($"Ошибка при загрузке данных: {ex.Message}", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -918,10 +884,10 @@ namespace Forecast.Forms
                 var dataSource = _orderItems.Select(item => new
                 {
                     Дата_заявки = item.OrderDate.ToShortDateString(),
-                    Номер_заявки = item.OrderNumber,
-                    Номер_позиции = item.PositionNumber,
-                    Наименование = item.ProductName,
-                    Артикул = item.ArticleNumber,
+                    Номер_заявки = item.OrderNumber ?? string.Empty,
+                    Номер_позиции = item.PositionNumber ?? string.Empty,
+                    Наименование = item.ProductName ?? string.Empty,
+                    Артикул = item.ArticleNumber ?? string.Empty,
                     Заказано = item.OrderedQuantity,
                     Поставлено = item.DeliveredQuantity,
                     Дата_поставки = item.DeliveryDate.HasValue ? item.DeliveryDate.Value.ToShortDateString() : "",
@@ -942,11 +908,11 @@ namespace Forecast.Forms
             if (productsGridView != null && _unifiedProducts != null)
             {
                 // Создание источника данных для таблицы
-                var dataSource = _unifiedProducts.Select(product => new
+                var dataSource = _unifiedProducts.Where(product => product != null).Select(product => new
                 {
-                    Унифицированный_артикул = product.UnifiedArticle,
-                    Наименование = product.PrimaryName,
-                    Количество_заказов = product.OrderHistory.Count,
+                    Унифицированный_артикул = product.UnifiedArticle ?? string.Empty,
+                    Наименование = product.PrimaryName ?? string.Empty,
+                    Количество_заказов = product.OrderHistory?.Count ?? 0,
                     Средний_интервал = Math.Round(product.AverageOrderInterval, 1),
                     Среднее_количество = Math.Round(product.AverageOrderQuantity, 1),
                     Средний_срок_поставки = Math.Round(product.AverageDeliveryTime, 1),
@@ -970,11 +936,11 @@ namespace Forecast.Forms
             if (forecastsGridView != null && _forecasts != null)
             {
                 // Создание источника данных для таблицы
-                var dataSource = _forecasts.Select(forecast => new
+                var dataSource = _forecasts.Where(forecast => forecast != null).Select(forecast => new
                 {
                     Приоритет = forecast.Priority,
-                    Артикул = forecast.UnifiedArticle,
-                    Наименование = forecast.ProductName,
+                    Артикул = forecast.UnifiedArticle ?? string.Empty,
+                    Наименование = forecast.ProductName ?? string.Empty,
                     Дата_заказа = forecast.NextOrderDate.ToShortDateString(),
                     Количество = Math.Round(forecast.RecommendedQuantity, 0),
                     Дата_размещения = forecast.OptimalOrderPlacementDate.ToShortDateString(),
@@ -987,28 +953,30 @@ namespace Forecast.Forms
                 // Настройка цветов для приоритетов
                 forecastsGridView.CellFormatting += (sender, e) =>
                 {
-                    if (e.ColumnIndex == 0 && e.RowIndex >= 0) // Столбец "Приоритет"
+                    if (e.Value != null && e.ColumnIndex == 0 && e.CellStyle != null) // Столбец "Приоритет"
                     {
-                        int priority = Convert.ToInt32(e.Value);
-                        
-                        switch (priority)
+                        var valueString = e.Value.ToString();
+                        if (!string.IsNullOrEmpty(valueString) && int.TryParse(valueString, out int priority))
                         {
-                            case 1: // Наивысший приоритет
-                                e.CellStyle.BackColor = Color.Red;
-                                e.CellStyle.ForeColor = Color.White;
-                                break;
-                            case 2: // Высокий приоритет
-                                e.CellStyle.BackColor = Color.Orange;
-                                break;
-                            case 3: // Средний приоритет
-                                e.CellStyle.BackColor = Color.Yellow;
-                                break;
-                            case 4: // Низкий приоритет
-                                e.CellStyle.BackColor = Color.LightGreen;
-                                break;
-                            case 5: // Самый низкий приоритет
-                                e.CellStyle.BackColor = Color.LightBlue;
-                                break;
+                            switch (priority)
+                            {
+                                case 1: // Наивысший приоритет
+                                    e.CellStyle.BackColor = Color.Red;
+                                    e.CellStyle.ForeColor = Color.White;
+                                    break;
+                                case 2: // Высокий приоритет
+                                    e.CellStyle.BackColor = Color.Orange;
+                                    break;
+                                case 3: // Средний приоритет
+                                    e.CellStyle.BackColor = Color.Yellow;
+                                    break;
+                                case 4: // Низкий приоритет
+                                    e.CellStyle.BackColor = Color.LightGreen;
+                                    break;
+                                case 5: // Самый низкий приоритет
+                                    e.CellStyle.BackColor = Color.LightBlue;
+                                    break;
+                            }
                         }
                     }
                 };

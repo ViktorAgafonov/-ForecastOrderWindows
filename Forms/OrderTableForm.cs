@@ -80,37 +80,12 @@ namespace Forecast.Forms
                 // Добавление разделителя
 
                 toolStrip.Items.Add(new ToolStripSeparator());
-                
-                // Добавление выпадающего списка для сортировки
 
-                var sortLabel = new ToolStripLabel("Сортировка:");
-                toolStrip.Items.Add(sortLabel);
-                
-                var sortComboBox = new ToolStripComboBox("sortComboBox");
-                if (sortComboBox == null)
-                {
-
-                    return;
-                }
-                sortComboBox.Items.AddRange(new object[] {
-                    "Дата заказа (возрастание)",
-                    "Дата заказа (убывание)",
-                    "Дата размещения (возрастание)",
-                    "Дата размещения (убывание)",
-                    "По приоритету"
-                });
-                sortComboBox.SelectedIndex = 1; // По умолчанию - по дате заказа (убывание)
-                sortComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-                sortComboBox.AutoSize = false;
-                sortComboBox.Width = 200;
-                sortComboBox.SelectedIndexChanged += SortComboBox_SelectedIndexChanged;
-                toolStrip.Items.Add(sortComboBox);
-                
                 // Добавление фильтра по приоритету
 
-                var priorityLabel = new ToolStripLabel("Приоритет:");
+                var priorityLabel = new ToolStripLabel("Фильтр по приоритету:");
                 toolStrip.Items.Add(priorityLabel);
-                
+
                 var priorityComboBox = new ToolStripComboBox("priorityComboBox");
                 if (priorityComboBox == null)
                 {
@@ -127,10 +102,16 @@ namespace Forecast.Forms
                 });
                 priorityComboBox.SelectedIndex = 0; // По умолчанию - все
                 priorityComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-                sortComboBox.AutoSize = false;
+                priorityComboBox.AutoSize = false;
                 priorityComboBox.Width = 150;
                 priorityComboBox.SelectedIndexChanged += PriorityComboBox_SelectedIndexChanged;
                 toolStrip.Items.Add(priorityComboBox);
+
+                // Добавление подсказки о сортировке
+                toolStrip.Items.Add(new ToolStripSeparator());
+                var sortHintLabel = new ToolStripLabel("Подсказка: Нажмите на заголовок колонки для сортировки");
+                sortHintLabel.ForeColor = Color.Gray;
+                toolStrip.Items.Add(sortHintLabel);
                 
                 // Создание строки состояния
 
@@ -179,16 +160,19 @@ namespace Forecast.Forms
                 _ordersGridView.AllowUserToResizeRows = false;
                 _ordersGridView.AlternatingRowsDefaultCellStyle.BackColor = Color.AliceBlue;
                 _ordersGridView.CellDoubleClick += OrdersGridView_CellDoubleClick;
+
+                // Включение автоматической сортировки по клику на заголовок
+                _ordersGridView.ColumnHeaderMouseClick += OrdersGridView_ColumnHeaderMouseClick;
                 
                 // Настройка цветов для приоритетов
-                _ordersGridView.CellFormatting += (sender, e) =>
+                if (_ordersGridView != null)
                 {
-                    if (e.ColumnIndex == 0 && e.RowIndex >= 0) // Столбец "Приоритет"
+                    _ordersGridView.CellFormatting += (sender, e) =>
                     {
-                        if (e.Value != null)
+                        if (e.Value != null && e.ColumnIndex == 0 && e.CellStyle != null) // Колонка приоритета
                         {
-                            int priority;
-                            if (int.TryParse(e.Value.ToString(), out priority))
+                            var valueString = e.Value.ToString();
+                            if (!string.IsNullOrEmpty(valueString) && int.TryParse(valueString, out int priority))
                             {
                                 switch (priority)
                                 {
@@ -211,8 +195,8 @@ namespace Forecast.Forms
                                 }
                             }
                         }
-                    }
-                };
+                    };
+                }
                 
                 contentPanel.Controls.Add(_ordersGridView);
                 
@@ -376,8 +360,8 @@ namespace Forecast.Forms
                 var dataSource = filteredForecasts.Select(order => new
                 {
                     Приоритет = order.Priority,
-                    Артикул = order.UnifiedArticle,
-                    Наименование = order.ProductName,
+                    Артикул = order.UnifiedArticle ?? string.Empty,
+                    Наименование = order.ProductName ?? string.Empty,
                     Дата_заказа = order.NextOrderDate.ToShortDateString(),
                     Количество = Math.Round(order.RecommendedQuantity, 0),
                     Дата_размещения = order.OptimalOrderPlacementDate.ToShortDateString(),
@@ -490,46 +474,161 @@ namespace Forecast.Forms
         }
         
         #region Обработчики событий
-        
+
         /// <summary>
-        /// Обработчик события изменения выбранного варианта сортировки
+        /// Обработчик клика по заголовку колонки для сортировки
         /// </summary>
-        private void SortComboBox_SelectedIndexChanged(object? sender, EventArgs e)
+        private void OrdersGridView_ColumnHeaderMouseClick(object? sender, DataGridViewCellMouseEventArgs e)
         {
-            var sortComboBox = sender as ToolStripComboBox;
-            
-            if (sortComboBox == null) return;
-            
-            var toolStrip = sortComboBox.GetCurrentParent();
-            var priorityComboBox = toolStrip?.Items.OfType<ToolStripComboBox>().FirstOrDefault(x => x.Name == "priorityComboBox");
-            
-            if (priorityComboBox != null)
+            if (_ordersGridView == null || _ordersGridView.DataSource == null)
+                return;
+
+            var gridView = sender as DataGridView;
+            if (gridView == null)
+                return;
+
+            var column = gridView.Columns[e.ColumnIndex];
+            var dataSource = gridView.DataSource as List<dynamic>;
+
+            if (dataSource == null)
+                return;
+
+            // Определяем направление сортировки
+            var direction = column.HeaderCell.SortGlyphDirection;
+            var newDirection = direction == SortOrder.Ascending ? SortOrder.Descending : SortOrder.Ascending;
+
+            // Сбрасываем индикаторы сортировки для всех колонок
+            foreach (DataGridViewColumn col in gridView.Columns)
             {
-                int sortIndex = sortComboBox.SelectedIndex;
-                int priorityFilter = priorityComboBox.SelectedIndex;
-                
-                SortOrders(sortIndex, priorityFilter);
+                col.HeaderCell.SortGlyphDirection = SortOrder.None;
             }
+
+            // Устанавливаем индикатор для текущей колонки
+            column.HeaderCell.SortGlyphDirection = newDirection;
+
+            // Получаем текущий фильтр по приоритету
+            var priorityFilter = GetCurrentPriorityFilter();
+
+            // Фильтруем данные
+            var filteredForecasts = priorityFilter > 0
+                ? _forecasts.Where(f => f.Priority == priorityFilter).ToList()
+                : _forecasts.ToList();
+
+            // Сортируем по выбранной колонке
+            IEnumerable<ForecastResult> sortedForecasts;
+
+            switch (column.Name)
+            {
+                case "Приоритет":
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.Priority)
+                        : filteredForecasts.OrderByDescending(f => f.Priority);
+                    break;
+                case "Дата_заказа":
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.NextOrderDate)
+                        : filteredForecasts.OrderByDescending(f => f.NextOrderDate);
+                    break;
+                case "Дата_размещения":
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.OptimalOrderPlacementDate)
+                        : filteredForecasts.OrderByDescending(f => f.OptimalOrderPlacementDate);
+                    break;
+                case "Количество":
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.RecommendedQuantity)
+                        : filteredForecasts.OrderByDescending(f => f.RecommendedQuantity);
+                    break;
+                case "Уверенность":
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.Confidence)
+                        : filteredForecasts.OrderByDescending(f => f.Confidence);
+                    break;
+                default:
+                    sortedForecasts = filteredForecasts;
+                    break;
+            }
+
+            DisplayOrders(sortedForecasts.ToList());
         }
-        
+
+        /// <summary>
+        /// Получение текущего фильтра по приоритету
+        /// </summary>
+        private int GetCurrentPriorityFilter()
+        {
+            var toolStrip = this.Controls.OfType<ToolStrip>().FirstOrDefault();
+            var priorityComboBox = toolStrip?.Items.OfType<ToolStripComboBox>().FirstOrDefault(x => x.Name == "priorityComboBox");
+            return priorityComboBox?.SelectedIndex ?? 0;
+        }
+
         /// <summary>
         /// Обработчик события изменения выбранного фильтра по приоритету
         /// </summary>
         private void PriorityComboBox_SelectedIndexChanged(object? sender, EventArgs e)
         {
             var priorityComboBox = sender as ToolStripComboBox;
-            
+
             if (priorityComboBox == null) return;
-            
-            var toolStrip = priorityComboBox.GetCurrentParent();
-            var sortComboBox = toolStrip?.Items.OfType<ToolStripComboBox>().FirstOrDefault(x => x.Name == "sortComboBox");
-            
-            if (sortComboBox != null)
+
+            int priorityFilter = priorityComboBox.SelectedIndex;
+
+            // Применение только фильтра, сортировка сохраняется
+            var filteredForecasts = priorityFilter > 0
+                ? _forecasts.Where(f => f.Priority == priorityFilter).ToList()
+                : _forecasts.ToList();
+
+            // Применяем текущую сортировку если она была установлена
+            if (_ordersGridView != null)
             {
-                int priorityFilter = priorityComboBox.SelectedIndex;
-                int sortIndex = sortComboBox.SelectedIndex;
-                
-                SortOrders(sortIndex, priorityFilter);
+                var sortedColumn = _ordersGridView.Columns.Cast<DataGridViewColumn>()
+                    .FirstOrDefault(c => c.HeaderCell.SortGlyphDirection != SortOrder.None);
+
+                if (sortedColumn != null)
+                {
+                    var direction = sortedColumn.HeaderCell.SortGlyphDirection;
+                    IEnumerable<ForecastResult> sortedForecasts = filteredForecasts;
+
+                    switch (sortedColumn.Name)
+                    {
+                        case "Приоритет":
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.Priority)
+                                : filteredForecasts.OrderByDescending(f => f.Priority);
+                            break;
+                        case "Дата_заказа":
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.NextOrderDate)
+                                : filteredForecasts.OrderByDescending(f => f.NextOrderDate);
+                            break;
+                        case "Дата_размещения":
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.OptimalOrderPlacementDate)
+                                : filteredForecasts.OrderByDescending(f => f.OptimalOrderPlacementDate);
+                            break;
+                        case "Количество":
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.RecommendedQuantity)
+                                : filteredForecasts.OrderByDescending(f => f.RecommendedQuantity);
+                            break;
+                        case "Уверенность":
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.Confidence)
+                                : filteredForecasts.OrderByDescending(f => f.Confidence);
+                            break;
+                    }
+
+                    DisplayOrders(sortedForecasts.ToList());
+                }
+                else
+                {
+                    // Если сортировка не установлена, показываем как есть
+                    DisplayOrders(filteredForecasts);
+                }
+            }
+            else
+            {
+                DisplayOrders(filteredForecasts);
             }
         }
         

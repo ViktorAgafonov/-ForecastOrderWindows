@@ -146,29 +146,31 @@ namespace Forecast.Services
                 // Если дата уже установлена и находится в будущем, используем её
                 if (!product.NextPredictedOrderDate.HasValue || product.NextPredictedOrderDate.Value < startDate)
                 {
-                    // Вычисляем среднее время между заказами
+                    // Вычисляем среднее время между заказами с улучшенным алгоритмом
                     if (product.OrderHistory.Count >= 2)
                     {
                         var sortedHistory = product.OrderHistory.OrderBy(h => h.OrderDate).ToList();
-                        double totalDays = (sortedHistory.Last().OrderDate - sortedHistory.First().OrderDate).TotalDays;
-                        double averageInterval = totalDays / (sortedHistory.Count - 1);
-                        
+
+                        // Используем взвешенное среднее с экспоненциальным сглаживанием
+                        // для более точного прогноза с акцентом на последние данные
+                        double weightedInterval = CalculateWeightedInterval(sortedHistory);
+
                         // Прогнозируем дату следующего заказа от последнего известного
                         var lastOrderDate = sortedHistory.Last().OrderDate;
-                        product.NextPredictedOrderDate = lastOrderDate.AddDays(averageInterval);
-                        
+                        product.NextPredictedOrderDate = lastOrderDate.AddDays(weightedInterval);
+
                         // Если прогнозируемая дата в прошлом, корректируем на текущую дату
                         if (product.NextPredictedOrderDate < startDate)
                         {
                             // Вычисляем, сколько интервалов нужно добавить, чтобы дата была в будущем
                             double daysSinceLastOrder = (startDate - lastOrderDate).TotalDays;
-                            int intervalsToAdd = (int)Math.Ceiling(daysSinceLastOrder / averageInterval);
-                            product.NextPredictedOrderDate = lastOrderDate.AddDays(intervalsToAdd * averageInterval);
+                            int intervalsToAdd = (int)Math.Ceiling(daysSinceLastOrder / weightedInterval);
+                            product.NextPredictedOrderDate = lastOrderDate.AddDays(intervalsToAdd * weightedInterval);
                         }
-                        
-                        // Рассчитываем рекомендуемый объем заказа
-                        product.RecommendedQuantity = product.OrderHistory.Average(h => h.OrderedQuantity);
-                        
+
+                        // Рассчитываем рекомендуемый объем заказа с учетом тренда
+                        product.RecommendedQuantity = CalculateWeightedQuantity(sortedHistory);
+
                         // Рассчитываем оптимальную дату размещения заказа
                         if (product.AverageDeliveryTime > 0)
                         {
@@ -342,13 +344,20 @@ namespace Forecast.Services
             }
             
             // Добавляем информацию о сезонности
-            int nextMonth = product.NextPredictedOrderDate.Value.Month - 1;
-            double seasonalCoefficient = product.SeasonalityCoefficients[nextMonth];
-            
-            if (seasonalCoefficient != 1) // Если есть сезонность
+            if (product.NextPredictedOrderDate.HasValue)
             {
-                string seasonalityDirection = seasonalCoefficient > 1 ? "повышение" : "снижение";
-                notes.Add($"Сезонный фактор: {seasonalityDirection} на {Math.Round(Math.Abs(seasonalCoefficient - 1) * 100)}% в {product.NextPredictedOrderDate.Value.ToString("MMMM")}."); 
+                int nextMonth = product.NextPredictedOrderDate.Value.Month - 1;
+                // Проверка границ массива для предотвращения IndexOutOfRangeException
+                if (nextMonth >= 0 && nextMonth < 12 && product.SeasonalityCoefficients != null)
+                {
+                    double seasonalCoefficient = product.SeasonalityCoefficients[nextMonth];
+
+                    if (Math.Abs(seasonalCoefficient - 1) > 0.05) // Если есть значимая сезонность (>5%)
+                    {
+                        string seasonalityDirection = seasonalCoefficient > 1 ? "повышение" : "снижение";
+                        notes.Add($"Сезонный фактор: {seasonalityDirection} на {Math.Round(Math.Abs(seasonalCoefficient - 1) * 100)}% в {product.NextPredictedOrderDate.Value.ToString("MMMM")}.");
+                    }
+                }
             }
             
             // Добавляем информацию о частоте заказов
@@ -359,7 +368,74 @@ namespace Forecast.Services
             
             return string.Join(" ", notes);
         }
-        
+
+        /// <summary>
+        /// Расчет взвешенного интервала между заказами с экспоненциальным сглаживанием
+        /// </summary>
+        private double CalculateWeightedInterval(List<OrderItem> sortedHistory)
+        {
+            if (sortedHistory.Count < 2)
+                return 30; // Значение по умолчанию
+
+            var intervals = new List<double>();
+            for (int i = 1; i < sortedHistory.Count; i++)
+            {
+                intervals.Add((sortedHistory[i].OrderDate - sortedHistory[i - 1].OrderDate).TotalDays);
+            }
+
+            // Применяем экспоненциальное сглаживание (EMA)
+            // Альфа = 2 / (N + 1), где N - количество периодов
+            double alpha = 2.0 / (intervals.Count + 1);
+            double ema = intervals[0]; // Начальное значение
+
+            for (int i = 1; i < intervals.Count; i++)
+            {
+                ema = alpha * intervals[i] + (1 - alpha) * ema;
+            }
+
+            return ema;
+        }
+
+        /// <summary>
+        /// Расчет рекомендуемого количества с учетом тренда и взвешивания
+        /// </summary>
+        private double CalculateWeightedQuantity(List<OrderItem> sortedHistory)
+        {
+            if (sortedHistory.Count == 0)
+                return 0;
+
+            if (sortedHistory.Count == 1)
+                return sortedHistory[0].OrderedQuantity;
+
+            // Используем линейную регрессию для учета тренда
+            int n = sortedHistory.Count;
+            double sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+            for (int i = 0; i < n; i++)
+            {
+                double x = i; // Индекс заказа
+                double y = sortedHistory[i].OrderedQuantity;
+
+                sumX += x;
+                sumY += y;
+                sumXY += x * y;
+                sumX2 += x * x;
+            }
+
+            // Коэффициенты линейной регрессии y = a + bx
+            double b = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+            double a = (sumY - b * sumX) / n;
+
+            // Прогноз для следующего периода
+            double predictedQuantity = a + b * n;
+
+            // Ограничиваем прогноз разумными пределами (не меньше 0, не больше 200% от максимума)
+            double maxQuantity = sortedHistory.Max(h => h.OrderedQuantity);
+            predictedQuantity = Math.Max(0, Math.Min(predictedQuantity, maxQuantity * 2));
+
+            return predictedQuantity;
+        }
+
         #endregion
     }
 }

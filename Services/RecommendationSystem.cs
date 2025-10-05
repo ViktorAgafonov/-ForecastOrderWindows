@@ -175,7 +175,7 @@ namespace Forecast.Services
         }
         
         /// <summary>
-        /// Загрузка прогнозов и рекомендаций из файла
+        /// Загрузка сохраненных рекомендаций из файла
         /// </summary>
         /// <param name="filePath">Путь к файлу с сохраненными прогнозами</param>
         /// <returns>Список прогнозов</returns>
@@ -188,7 +188,7 @@ namespace Forecast.Services
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
-                    forecasts = JsonSerializer.Deserialize<List<ForecastResult>>(json);
+                    forecasts = JsonSerializer.Deserialize<List<ForecastResult>>(json) ?? new List<ForecastResult>();
                 }
             }
             catch (Exception ex)

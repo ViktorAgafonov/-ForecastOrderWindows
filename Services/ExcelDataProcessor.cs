@@ -104,7 +104,7 @@ namespace Forecast.Services
             // Группируем заказы по артикулам
             var groupsByArticle = orderItems
                 .Where(item => !string.IsNullOrWhiteSpace(item.ArticleNumber))
-                .GroupBy(item => item.ArticleNumber.Trim().ToUpper());
+                .GroupBy(item => item.ArticleNumber!.Trim().ToUpper());
             
             // Создаем унифицированные товары для каждой группы
             foreach (var group in groupsByArticle)
@@ -120,7 +120,8 @@ namespace Forecast.Services
                 
                 // Добавляем все вариации наименований
                 unifiedProduct.NameVariations = group
-                    .Select(item => item.ProductName)
+                    .Select(item => item.ProductName ?? string.Empty)
+                    .Where(name => !string.IsNullOrEmpty(name))
                     .Distinct()
                     .ToList();
                 
@@ -139,21 +140,27 @@ namespace Forecast.Services
             {
                 bool added = false;
                 
+                // Пропускаем товары без наименования
+                if (string.IsNullOrWhiteSpace(item.ProductName))
+                    continue;
+
                 // Пытаемся найти подходящий унифицированный товар по схожести наименования
                 foreach (var unifiedProduct in unifiedProducts)
                 {
-                    if (unifiedProduct.NameVariations.Any(name => 
-                CalculateSimilarity(name ?? string.Empty, item.ProductName ?? string.Empty) > SIMILARITY_THRESHOLD))
+                    if (unifiedProduct.NameVariations != null &&
+                        unifiedProduct.NameVariations.Any(name =>
+                            !string.IsNullOrEmpty(name) &&
+                            CalculateSimilarity(name, item.ProductName) > SIMILARITY_THRESHOLD))
                     {
                         // Добавляем товар к существующему унифицированному товару
                         unifiedProduct.OrderHistory.Add(item);
-                        
+
                         // Добавляем наименование, если его еще нет в списке вариаций
-                        if (!string.IsNullOrEmpty(item.ProductName) && !unifiedProduct.NameVariations.Contains(item.ProductName ?? string.Empty))
+                        if (!unifiedProduct.NameVariations.Contains(item.ProductName))
                         {
-                            unifiedProduct.NameVariations.Add(item.ProductName ?? string.Empty);
+                            unifiedProduct.NameVariations.Add(item.ProductName);
                         }
-                        
+
                         added = true;
                         break;
                     }
@@ -165,7 +172,7 @@ namespace Forecast.Services
                     var newUnifiedProduct = new UnifiedProduct
                     {
                         UnifiedArticle = $"AUTO_{unifiedProducts.Count + 1}",
-                        PrimaryName = item.ProductName,
+                        PrimaryName = item.ProductName ?? string.Empty,
                         OrderHistory = new List<OrderItem> { item }
                     };
                     
@@ -454,7 +461,10 @@ namespace Forecast.Services
                 double totalDeliveryDays = 0;
                 foreach (var item in itemsWithDelivery)
                 {
-                    totalDeliveryDays += (item.DeliveryDate.Value - item.OrderDate).TotalDays;
+                    if (item.DeliveryDate.HasValue)
+                    {
+                        totalDeliveryDays += (item.DeliveryDate.Value - item.OrderDate).TotalDays;
+                    }
                 }
                 
                 product.AverageDeliveryTime = totalDeliveryDays / itemsWithDelivery.Count;
