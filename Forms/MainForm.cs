@@ -332,33 +332,38 @@ namespace Forecast.Forms
         }
         
         /// <summary>
-        /// Обработчик события формирования прогнозов
+        /// Обработчик события формирования прогнозов (асинхронно)
         /// </summary>
-        private void GenerateForecastsMenuItem_Click(object? sender, EventArgs e)
+        private async void GenerateForecastsMenuItem_Click(object? sender, EventArgs e)
         {
             try
             {
                 if (_unifiedProducts == null || _unifiedProducts.Count == 0)
                 {
-                    MessageBox.Show("Сначала обработайте и проанализируйте данные.", "Предупреждение", 
+                    MessageBox.Show("Сначала загрузите и обработайте данные.", "Предупреждение",
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
-                
+
                 Cursor = Cursors.WaitCursor;
-                
-                // Генерация прогнозов
-                _forecasts = _forecastEngine.GenerateFullForecasts(_unifiedProducts, DateTime.Now, DateTime.Now.AddDays(_forecastSettings.DaysAhead));
-                
+                UpdateStatus("Обновление прогнозов...");
+
+                // Генерация прогнозов в фоновом потоке (обработка в памяти)
+                _forecasts = await Task.Run(() =>
+                    _forecastEngine.GenerateFullForecasts(_unifiedProducts, DateTime.Now,
+                        DateTime.Now.AddDays(_forecastSettings.DaysAhead)));
+
                 // Обновление таблицы прогнозов
                 UpdateForecastsGrid();
-                
-                MessageBox.Show($"Сгенерировано {_forecasts.Count} прогнозов.", "Информация", 
+                UpdateStatus("Готово");
+
+                MessageBox.Show($"Сгенерировано {_forecasts.Count} прогнозов.", "Информация",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при генерации прогнозов: {ex.Message}", "Ошибка", 
+                UpdateStatus("Ошибка");
+                MessageBox.Show($"Ошибка при генерации прогнозов: {ex.Message}", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
@@ -762,41 +767,52 @@ namespace Forecast.Forms
         #region Вспомогательные методы
         
         /// <summary>
-        /// Загрузка и автоматическая обработка данных из Excel файла
+        /// Загрузка и автоматическая обработка данных из Excel файла (асинхронно)
         /// </summary>
-        private void LoadAndProcessExcelData()
+        private async void LoadAndProcessExcelData()
         {
             try
             {
                 Cursor = Cursors.WaitCursor;
                 UpdateStatus("Загрузка данных из Excel...");
 
-                // Загрузка данных из Excel файла
-                _orderItems = _dataProcessor.LoadData(_excelFilePath);
+                // Загрузка данных из Excel файла (файловая операция - единственное место чтения)
+                _orderItems = await Task.Run(() => _dataProcessor.LoadData(_excelFilePath));
+                UpdateStatus($"Загружено {_orderItems.Count} записей. Обработка в памяти...");
+
+                // ВСЯ ДАЛЬНЕЙШАЯ ОБРАБОТКА В ПАМЯТИ
+                var processingResult = await Task.Run(() =>
+                {
+                    // Унификация товаров
+                    var unifiedProducts = _dataProcessor.UnifyProducts(_orderItems);
+
+                    // Параллельный анализ данных (все 4 метода независимы)
+                    Parallel.Invoke(
+                        () => _orderAnalyzer.AnalyzeOrderFrequency(unifiedProducts),
+                        () => _orderAnalyzer.AnalyzeOrderVolumes(unifiedProducts),
+                        () => _orderAnalyzer.AnalyzeSeasonality(unifiedProducts),
+                        () => _orderAnalyzer.AnalyzeDeliveryTimes(unifiedProducts)
+                    );
+
+                    // Генерация прогнозов
+                    var forecasts = _forecastEngine.GenerateFullForecasts(unifiedProducts, DateTime.Now,
+                        DateTime.Now.AddDays(_forecastSettings.DaysAhead));
+
+                    return new { UnifiedProducts = unifiedProducts, Forecasts = forecasts };
+                });
+
+                // Обновление данных в UI (после завершения всей обработки)
+                _unifiedProducts = processingResult.UnifiedProducts;
+                _forecasts = processingResult.Forecasts;
+
+                // ОДНО обновление UI вместо множественных
                 UpdateDataGrid();
-                UpdateStatus($"Загружено {_orderItems.Count} записей. Обработка данных...");
-
-                // Автоматическая обработка данных
-                _unifiedProducts = _dataProcessor.UnifyProducts(_orderItems);
                 UpdateProductsGrid();
-                UpdateStatus($"Обработано {_unifiedProducts.Count} товаров. Анализ данных...");
-
-                // Автоматический анализ данных
-                _orderAnalyzer.AnalyzeOrderFrequency(_unifiedProducts);
-                _orderAnalyzer.AnalyzeOrderVolumes(_unifiedProducts);
-                _orderAnalyzer.AnalyzeSeasonality(_unifiedProducts);
-                _orderAnalyzer.AnalyzeDeliveryTimes(_unifiedProducts);
-                UpdateProductsGrid();
-                UpdateStatus("Анализ завершен. Формирование прогнозов...");
-
-                // Автоматическая генерация прогнозов
-                _forecasts = _forecastEngine.GenerateFullForecasts(_unifiedProducts, DateTime.Now,
-                    DateTime.Now.AddDays(_forecastSettings.DaysAhead));
                 UpdateForecastsGrid();
                 UpdateStatus("Готово");
 
-                // Автосохранение базы соответствий
-                _dataProcessor.SaveItemMapping(_unifiedProducts, _mappingFilePath);
+                // Асинхронное сохранение базы соответствий (не блокирует UI)
+                await Task.Run(() => _dataProcessor.SaveItemMapping(_unifiedProducts, _mappingFilePath));
 
                 MessageBox.Show(
                     $"Обработка завершена:\n\n" +
@@ -832,7 +848,7 @@ namespace Forecast.Forms
                 {
                     statusLabel.Text = message;
                     statusStrip.Refresh();
-                    Application.DoEvents(); // Обновляем UI
+                    // Application.DoEvents() удален - асинхронность решает проблему блокировки UI
                 }
             }
         }

@@ -94,6 +94,7 @@ namespace Forecast.Forms
             historyGridView.ReadOnly = true;
             historyGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             historyGridView.Name = "historyGridView";
+            historyGridView.ColumnHeaderMouseClick += HistoryGridView_ColumnHeaderMouseClick;
             historyTabPage.Controls.Add(historyGridView);
             
             // Вкладка "Сезонность"
@@ -106,6 +107,7 @@ namespace Forecast.Forms
             seasonalityGridView.ReadOnly = true;
             seasonalityGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             seasonalityGridView.Name = "seasonalityGridView";
+            seasonalityGridView.ColumnHeaderMouseClick += SeasonalityGridView_ColumnHeaderMouseClick;
             seasonalityTabPage.Controls.Add(seasonalityGridView);
             
             // Вкладка "Прогноз"
@@ -605,11 +607,146 @@ namespace Forecast.Forms
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при экспорте: {ex.Message}", "Ошибка", 
+                MessageBox.Show($"Ошибка при экспорте: {ex.Message}", "Ошибка",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-        
+
+        /// <summary>
+        /// Обработчик клика по заголовку колонки истории заказов для сортировки
+        /// </summary>
+        private void HistoryGridView_ColumnHeaderMouseClick(object? sender, DataGridViewCellMouseEventArgs e)
+        {
+            var gridView = sender as DataGridView;
+            if (gridView == null || gridView.DataSource == null)
+                return;
+
+            var column = gridView.Columns[e.ColumnIndex];
+            var direction = column.HeaderCell.SortGlyphDirection;
+            var newDirection = direction == SortOrder.Ascending ? SortOrder.Descending : SortOrder.Ascending;
+
+            // Сбрасываем индикаторы сортировки
+            foreach (DataGridViewColumn col in gridView.Columns)
+                col.HeaderCell.SortGlyphDirection = SortOrder.None;
+
+            column.HeaderCell.SortGlyphDirection = newDirection;
+
+            // Получаем текущий выбранный товар
+            var productsListBox = this.Controls.Find("productsListBox", true).FirstOrDefault() as ListBox;
+            if (productsListBox?.SelectedItem == null)
+                return;
+
+            var selectedProduct = _unifiedProducts.FirstOrDefault(p =>
+                p.UnifiedArticle == productsListBox.SelectedItem.ToString()?.Split('-')[0].Trim());
+
+            if (selectedProduct?.OrderHistory == null)
+                return;
+
+            // Сортируем данные
+            IEnumerable<OrderItem> sortedOrders = selectedProduct.OrderHistory;
+
+            switch (e.ColumnIndex)
+            {
+                case 0: // Дата заказа
+                    sortedOrders = newDirection == SortOrder.Ascending
+                        ? selectedProduct.OrderHistory.OrderBy(o => o.OrderDate)
+                        : selectedProduct.OrderHistory.OrderByDescending(o => o.OrderDate);
+                    break;
+                case 1: // Номер заказа
+                    sortedOrders = newDirection == SortOrder.Ascending
+                        ? selectedProduct.OrderHistory.OrderBy(o => o.OrderNumber)
+                        : selectedProduct.OrderHistory.OrderByDescending(o => o.OrderNumber);
+                    break;
+                case 2: // Количество заказано
+                    sortedOrders = newDirection == SortOrder.Ascending
+                        ? selectedProduct.OrderHistory.OrderBy(o => o.OrderedQuantity)
+                        : selectedProduct.OrderHistory.OrderByDescending(o => o.OrderedQuantity);
+                    break;
+                case 3: // Количество поставлено
+                    sortedOrders = newDirection == SortOrder.Ascending
+                        ? selectedProduct.OrderHistory.OrderBy(o => o.DeliveredQuantity)
+                        : selectedProduct.OrderHistory.OrderByDescending(o => o.DeliveredQuantity);
+                    break;
+                case 4: // Дата поставки
+                    sortedOrders = newDirection == SortOrder.Ascending
+                        ? selectedProduct.OrderHistory.OrderBy(o => o.DeliveryDate ?? DateTime.MaxValue)
+                        : selectedProduct.OrderHistory.OrderByDescending(o => o.DeliveryDate ?? DateTime.MinValue);
+                    break;
+            }
+
+            // Обновляем таблицу
+            var dataSource = sortedOrders.Select(order => new
+            {
+                Дата_заказа = order.OrderDate.ToShortDateString(),
+                Номер_заказа = order.OrderNumber ?? string.Empty,
+                Заказано = order.OrderedQuantity,
+                Поставлено = order.DeliveredQuantity,
+                Дата_поставки = order.DeliveryDate.HasValue ? order.DeliveryDate.Value.ToShortDateString() : ""
+            }).ToList();
+
+            gridView.DataSource = dataSource;
+        }
+
+        /// <summary>
+        /// Обработчик клика по заголовку колонки сезонности для сортировки
+        /// </summary>
+        private void SeasonalityGridView_ColumnHeaderMouseClick(object? sender, DataGridViewCellMouseEventArgs e)
+        {
+            var gridView = sender as DataGridView;
+            if (gridView == null || gridView.DataSource == null)
+                return;
+
+            var column = gridView.Columns[e.ColumnIndex];
+            var direction = column.HeaderCell.SortGlyphDirection;
+            var newDirection = direction == SortOrder.Ascending ? SortOrder.Descending : SortOrder.Ascending;
+
+            // Сбрасываем индикаторы сортировки
+            foreach (DataGridViewColumn col in gridView.Columns)
+                col.HeaderCell.SortGlyphDirection = SortOrder.None;
+
+            column.HeaderCell.SortGlyphDirection = newDirection;
+
+            // Получаем текущий выбранный товар
+            var productsListBox = this.Controls.Find("productsListBox", true).FirstOrDefault() as ListBox;
+            if (productsListBox?.SelectedItem == null)
+                return;
+
+            var selectedProduct = _unifiedProducts.FirstOrDefault(p =>
+                p.UnifiedArticle == productsListBox.SelectedItem.ToString()?.Split('-')[0].Trim());
+
+            if (selectedProduct?.SeasonalityCoefficients == null)
+                return;
+
+            // Создаем список для сортировки
+            var seasonalityData = new[]
+            {
+                new { Месяц = "Январь", Коэффициент = selectedProduct.SeasonalityCoefficients[0] },
+                new { Месяц = "Февраль", Коэффициент = selectedProduct.SeasonalityCoefficients[1] },
+                new { Месяц = "Март", Коэффициент = selectedProduct.SeasonalityCoefficients[2] },
+                new { Месяц = "Апрель", Коэффициент = selectedProduct.SeasonalityCoefficients[3] },
+                new { Месяц = "Май", Коэффициент = selectedProduct.SeasonalityCoefficients[4] },
+                new { Месяц = "Июнь", Коэффициент = selectedProduct.SeasonalityCoefficients[5] },
+                new { Месяц = "Июль", Коэффициент = selectedProduct.SeasonalityCoefficients[6] },
+                new { Месяц = "Август", Коэффициент = selectedProduct.SeasonalityCoefficients[7] },
+                new { Месяц = "Сентябрь", Коэффициент = selectedProduct.SeasonalityCoefficients[8] },
+                new { Месяц = "Октябрь", Коэффициент = selectedProduct.SeasonalityCoefficients[9] },
+                new { Месяц = "Ноябрь", Коэффициент = selectedProduct.SeasonalityCoefficients[10] },
+                new { Месяц = "Декабрь", Коэффициент = selectedProduct.SeasonalityCoefficients[11] }
+            }.ToList();
+
+            // Сортируем
+            IEnumerable<dynamic> sortedData = seasonalityData;
+
+            if (e.ColumnIndex == 1) // Колонка "Коэффициент"
+            {
+                sortedData = newDirection == SortOrder.Ascending
+                    ? seasonalityData.OrderBy(s => s.Коэффициент)
+                    : seasonalityData.OrderByDescending(s => s.Коэффициент);
+            }
+
+            gridView.DataSource = sortedData.ToList();
+        }
+
         #endregion
     }
 }
