@@ -514,32 +514,42 @@ namespace Forecast.Forms
                 ? _forecasts.Where(f => f.Priority == priorityFilter).ToList()
                 : _forecasts.ToList();
 
-            // Сортируем по выбранной колонке
+            // Сортируем по выбранной колонке (используем индекс вместо имени, так как DataSource - анонимный тип)
             IEnumerable<ForecastResult> sortedForecasts;
 
-            switch (column.Name)
+            switch (e.ColumnIndex)
             {
-                case "Приоритет":
+                case 0: // Приоритет
                     sortedForecasts = newDirection == SortOrder.Ascending
                         ? filteredForecasts.OrderBy(f => f.Priority)
                         : filteredForecasts.OrderByDescending(f => f.Priority);
                     break;
-                case "Дата_заказа":
+                case 1: // Артикул
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.UnifiedArticle)
+                        : filteredForecasts.OrderByDescending(f => f.UnifiedArticle);
+                    break;
+                case 2: // Наименование
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.ProductName)
+                        : filteredForecasts.OrderByDescending(f => f.ProductName);
+                    break;
+                case 3: // Дата заказа
                     sortedForecasts = newDirection == SortOrder.Ascending
                         ? filteredForecasts.OrderBy(f => f.NextOrderDate)
                         : filteredForecasts.OrderByDescending(f => f.NextOrderDate);
                     break;
-                case "Дата_размещения":
-                    sortedForecasts = newDirection == SortOrder.Ascending
-                        ? filteredForecasts.OrderBy(f => f.OptimalOrderPlacementDate)
-                        : filteredForecasts.OrderByDescending(f => f.OptimalOrderPlacementDate);
-                    break;
-                case "Количество":
+                case 4: // Количество
                     sortedForecasts = newDirection == SortOrder.Ascending
                         ? filteredForecasts.OrderBy(f => f.RecommendedQuantity)
                         : filteredForecasts.OrderByDescending(f => f.RecommendedQuantity);
                     break;
-                case "Уверенность":
+                case 5: // Дата размещения
+                    sortedForecasts = newDirection == SortOrder.Ascending
+                        ? filteredForecasts.OrderBy(f => f.OptimalOrderPlacementDate)
+                        : filteredForecasts.OrderByDescending(f => f.OptimalOrderPlacementDate);
+                    break;
+                case 6: // Уверенность
                     sortedForecasts = newDirection == SortOrder.Ascending
                         ? filteredForecasts.OrderBy(f => f.Confidence)
                         : filteredForecasts.OrderByDescending(f => f.Confidence);
@@ -588,30 +598,41 @@ namespace Forecast.Forms
                 {
                     var direction = sortedColumn.HeaderCell.SortGlyphDirection;
                     IEnumerable<ForecastResult> sortedForecasts = filteredForecasts;
+                    int columnIndex = sortedColumn.Index;
 
-                    switch (sortedColumn.Name)
+                    switch (columnIndex)
                     {
-                        case "Приоритет":
+                        case 0: // Приоритет
                             sortedForecasts = direction == SortOrder.Ascending
                                 ? filteredForecasts.OrderBy(f => f.Priority)
                                 : filteredForecasts.OrderByDescending(f => f.Priority);
                             break;
-                        case "Дата_заказа":
+                        case 1: // Артикул
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.UnifiedArticle)
+                                : filteredForecasts.OrderByDescending(f => f.UnifiedArticle);
+                            break;
+                        case 2: // Наименование
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.ProductName)
+                                : filteredForecasts.OrderByDescending(f => f.ProductName);
+                            break;
+                        case 3: // Дата заказа
                             sortedForecasts = direction == SortOrder.Ascending
                                 ? filteredForecasts.OrderBy(f => f.NextOrderDate)
                                 : filteredForecasts.OrderByDescending(f => f.NextOrderDate);
                             break;
-                        case "Дата_размещения":
-                            sortedForecasts = direction == SortOrder.Ascending
-                                ? filteredForecasts.OrderBy(f => f.OptimalOrderPlacementDate)
-                                : filteredForecasts.OrderByDescending(f => f.OptimalOrderPlacementDate);
-                            break;
-                        case "Количество":
+                        case 4: // Количество
                             sortedForecasts = direction == SortOrder.Ascending
                                 ? filteredForecasts.OrderBy(f => f.RecommendedQuantity)
                                 : filteredForecasts.OrderByDescending(f => f.RecommendedQuantity);
                             break;
-                        case "Уверенность":
+                        case 5: // Дата размещения
+                            sortedForecasts = direction == SortOrder.Ascending
+                                ? filteredForecasts.OrderBy(f => f.OptimalOrderPlacementDate)
+                                : filteredForecasts.OrderByDescending(f => f.OptimalOrderPlacementDate);
+                            break;
+                        case 6: // Уверенность
                             sortedForecasts = direction == SortOrder.Ascending
                                 ? filteredForecasts.OrderBy(f => f.Confidence)
                                 : filteredForecasts.OrderByDescending(f => f.Confidence);

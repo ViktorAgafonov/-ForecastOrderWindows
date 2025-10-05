@@ -102,24 +102,19 @@ namespace Forecast.Forms
             exitMenuItem.ShortcutKeys = Keys.Alt | Keys.F4;
             fileMenuItem.DropDownItems.Add(exitMenuItem);
             
-            // Пункт меню "Анализ"
-            var analysisMenuItem = new ToolStripMenuItem("Анализ");
-            mainMenu.Items.Add(analysisMenuItem);
-            
-            var processDataMenuItem = new ToolStripMenuItem("Обработать данные");
-            processDataMenuItem.Click += ProcessDataMenuItem_Click;
-            processDataMenuItem.ShortcutKeys = Keys.Control | Keys.P;
-            analysisMenuItem.DropDownItems.Add(processDataMenuItem);
-            
-            var analyzeDataMenuItem = new ToolStripMenuItem("Анализировать данные");
-            analyzeDataMenuItem.Click += AnalyzeDataMenuItem_Click;
-            analyzeDataMenuItem.ShortcutKeys = Keys.Control | Keys.A;
-            analysisMenuItem.DropDownItems.Add(analyzeDataMenuItem);
-            
-            var generateForecastsMenuItem = new ToolStripMenuItem("Сформировать прогнозы");
-            generateForecastsMenuItem.Click += GenerateForecastsMenuItem_Click;
-            generateForecastsMenuItem.ShortcutKeys = Keys.Control | Keys.F;
-            analysisMenuItem.DropDownItems.Add(generateForecastsMenuItem);
+            // Пункт меню "Прогноз"
+            var forecastMenuItem = new ToolStripMenuItem("Прогноз");
+            mainMenu.Items.Add(forecastMenuItem);
+
+            var loadAndProcessMenuItem = new ToolStripMenuItem("Загрузить и обработать данные");
+            loadAndProcessMenuItem.Click += OpenFileMenuItem_Click;
+            loadAndProcessMenuItem.ShortcutKeys = Keys.Control | Keys.L;
+            forecastMenuItem.DropDownItems.Add(loadAndProcessMenuItem);
+
+            var refreshForecastMenuItem = new ToolStripMenuItem("Обновить прогноз");
+            refreshForecastMenuItem.Click += GenerateForecastsMenuItem_Click;
+            refreshForecastMenuItem.ShortcutKeys = Keys.Control | Keys.R;
+            forecastMenuItem.DropDownItems.Add(refreshForecastMenuItem);
             
             // Пункт меню "Настройки"
             var settingsMenuItem = new ToolStripMenuItem("Настройки");
